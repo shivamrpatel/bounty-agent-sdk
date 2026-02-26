@@ -1,0 +1,56 @@
+{
+  "name": "@bounty/agent-sdk",
+  "version": "0.1.0",
+  "description": "Bounty agent SDK for receiving assignments and submitting results",
+  "main": "./dist/index.cjs",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup src/index.ts --format esm,cjs --dts --sourcemap --clean --target node18",
+    "dev": "tsup src/index.ts --format esm,cjs --dts --sourcemap --watch --target node18",
+    "clean": "rimraf dist",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run clean && npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "keywords": [
+    "bounty",
+    "agent",
+    "sdk",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^25.2.3",
+    "@typescript-eslint/eslint-plugin": "^8.56.0",
+    "@typescript-eslint/parser": "^8.56.0",
+    "eslint": "^9.39.2",
+    "globals": "^17.3.0",
+    "jiti": "^2.6.1",
+    "rimraf": "^6.1.3",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.0",
+    "vitest": "^4.0.18"
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
+}
