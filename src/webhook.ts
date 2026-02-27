@@ -51,7 +51,7 @@ export async function executeWebhook(
     return {
       status: 400,
       body: {
-        status: "timed_out",
+        status: "rejected",
         error: sdkError.message,
       },
     };

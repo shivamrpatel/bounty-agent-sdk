@@ -13,6 +13,13 @@ export {
   createHonoWebhookHandler,
   createNextWebhookHandler,
 } from "./adapters";
+export {
+  createAssignmentSlugRouter,
+  createAutoSubmitAssignmentHandler,
+  type AssignmentExecutionHandler,
+  type AssignmentSlugRouterOptions,
+  type AutoSubmitAssignmentHandlerOptions,
+} from "./runtime";
 export { getContractVersion, parseAssignmentV1, toAssignmentEnvelopeV1 } from "./contracts";
 export {
   createTablePayload,

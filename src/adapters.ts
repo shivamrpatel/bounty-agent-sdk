@@ -3,8 +3,10 @@ import {
   DEFAULT_TIMESTAMP_HEADER,
   createWebhookHandler,
   executeWebhook,
+  type WebhookHttpResponse,
   type WebhookHandlerOptions,
 } from "./webhook";
+import { SdkError } from "./errors";
 
 function headerValue(headers: Record<string, string | string[] | undefined>, key: string) {
   const value = headers[key] ?? headers[key.toLowerCase()];
@@ -18,10 +20,53 @@ function normalizeBody(body: unknown): string {
   if (typeof body === "string") {
     return body;
   }
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(body)) {
+    return body.toString("utf8");
+  }
   if (body === undefined || body === null) {
     return "";
   }
   return JSON.stringify(body);
+}
+
+async function readExpressBody(req: {
+  body?: unknown;
+  rawBody?: string | Buffer;
+  on?: (event: string, listener: (...args: unknown[]) => void) => void;
+}) {
+  if (typeof req.rawBody === "string" || Buffer.isBuffer(req.rawBody)) {
+    return normalizeBody(req.rawBody);
+  }
+
+  if (req.body !== undefined) {
+    if (typeof req.body === "object" && req.body !== null && !Buffer.isBuffer(req.body)) {
+      throw new SdkError(
+        "Express webhook route must receive raw bytes. Mount webhook routes before express.json() or exclude them from JSON parsing.",
+      );
+    }
+    return normalizeBody(req.body);
+  }
+
+  if (!req.on) {
+    return "";
+  }
+
+  return await new Promise<string>((resolve, reject) => {
+    const chunks: Uint8Array[] = [];
+    req.on?.("data", (chunk: unknown) => {
+      if (typeof chunk === "string") {
+        chunks.push(Buffer.from(chunk, "utf8"));
+      } else if (chunk instanceof Uint8Array) {
+        chunks.push(chunk);
+      }
+    });
+    req.on?.("end", () => {
+      resolve(Buffer.concat(chunks).toString("utf8"));
+    });
+    req.on?.("error", (error: unknown) => {
+      reject(error);
+    });
+  });
 }
 
 function toWebhookInput(params: {
@@ -33,6 +78,17 @@ function toWebhookInput(params: {
     body: params.body,
     ...(params.signature ? { signature: params.signature } : {}),
     ...(params.timestamp ? { timestamp: params.timestamp } : {}),
+  };
+}
+
+function toBadRequest(error: unknown): WebhookHttpResponse {
+  const message = error instanceof Error ? error.message : "Unexpected webhook error";
+  return {
+    status: 400,
+    body: {
+      status: "rejected",
+      error: message,
+    },
   };
 }
 
@@ -49,15 +105,20 @@ export function createExpressWebhookHandler(options: WebhookHandlerOptions) {
       status: (code: number) => { json: (payload: unknown) => void };
     },
   ) {
-    const body = req.rawBody ?? normalizeBody(req.body);
-    const result = await executeWebhook(
-      handler,
-      toWebhookInput({
-        body,
-        signature: headerValue(req.headers, DEFAULT_SIGNATURE_HEADER),
-        timestamp: headerValue(req.headers, DEFAULT_TIMESTAMP_HEADER),
-      }),
-    );
+    let result: WebhookHttpResponse;
+    try {
+      const body = await readExpressBody(req);
+      result = await executeWebhook(
+        handler,
+        toWebhookInput({
+          body,
+          signature: headerValue(req.headers, DEFAULT_SIGNATURE_HEADER),
+          timestamp: headerValue(req.headers, DEFAULT_TIMESTAMP_HEADER),
+        }),
+      );
+    } catch (error) {
+      result = toBadRequest(error);
+    }
 
     res.status(result.status).json(result.body);
   };

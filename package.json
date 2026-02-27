@@ -1,6 +1,6 @@
 {
   "name": "@bounty-ai/agent-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Bounty agent SDK for receiving assignments and submitting results",
   "main": "./dist/index.cjs",
   "scripts": {

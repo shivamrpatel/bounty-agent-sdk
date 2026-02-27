@@ -1,6 +1,6 @@
 export type SdkContractVersion = "v1";
 
-export type AssignmentStatus = "assigned" | "verifying" | "timed_out";
+export type AssignmentStatus = "assigned" | "verifying" | "rejected" | "timed_out";
 
 export type OutcomePayload = Record<string, unknown>;
 
