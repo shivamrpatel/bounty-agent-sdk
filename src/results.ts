@@ -20,7 +20,7 @@ export type CreateTableResultOptions = {
   dedupeBy?: string[];
 };
 
-const DEFAULT_CONTACT_FIELDS = ["email", "phone", "profile_url", "linkedin_url"];
+const DEFAULT_CONTACT_FIELDS = ["email", "phone", "profile_url", "url"];
 
 function hasValue(value: unknown) {
   if (typeof value === "string") {
