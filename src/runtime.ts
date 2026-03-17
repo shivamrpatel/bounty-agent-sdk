@@ -1,6 +1,12 @@
 import { AgentClient, type ClientOptions } from "./client";
 import { SdkError } from "./errors";
-import type { Assignment, AssignmentResult, SubmitErrorRequest, SubmitResultRequest } from "./types";
+import type {
+  Assignment,
+  AssignmentAction,
+  AssignmentResult,
+  SubmitErrorRequest,
+  SubmitResultRequest,
+} from "./types";
 
 type RuntimeLogger = {
   info?: (...args: unknown[]) => void;
@@ -9,18 +15,28 @@ type RuntimeLogger = {
 
 export type AutoSubmitAssignmentHandlerOptions = {
   client: AgentClient | ClientOptions;
-  runAssignment: (params: { assignment: Assignment }) => Promise<Record<string, unknown>>;
+  runAssignment: (params: { assignment: Assignment }) => Promise<AssignmentExecutionOutput>;
   acceptAssignment?: (params: { assignment: Assignment }) => Promise<AssignmentResult> | AssignmentResult;
   createSubmitRequest?: (params: {
     assignment: Assignment;
     result: Record<string, unknown>;
+    actions?: AssignmentAction[];
   }) => SubmitResultRequest;
   createSubmitErrorRequest?: (params: { assignment: Assignment; error: unknown }) => SubmitErrorRequest;
   executionMode?: "background" | "blocking";
   logger?: RuntimeLogger;
 };
 
-export type AssignmentExecutionHandler = (params: { assignment: Assignment }) => Promise<Record<string, unknown>>;
+export type AssignmentExecutionResult = {
+  result: Record<string, unknown>;
+  actions?: AssignmentAction[];
+};
+
+export type AssignmentExecutionOutput = Record<string, unknown> | AssignmentExecutionResult;
+
+export type AssignmentExecutionHandler = (
+  params: { assignment: Assignment },
+) => Promise<AssignmentExecutionOutput>;
 
 export type AssignmentSlugRouterOptions = {
   handlers: Record<string, AssignmentExecutionHandler>;
@@ -48,11 +64,13 @@ function defaultAcceptedResponse(assignment: Assignment): AssignmentResult {
 function defaultSubmitRequest(params: {
   assignment: Assignment;
   result: Record<string, unknown>;
+  actions?: AssignmentAction[];
 }): SubmitResultRequest {
   return {
     assignmentId: params.assignment.assignment_id,
     status: "verifying",
     result: params.result,
+    ...(params.actions && params.actions.length > 0 ? { actions: params.actions } : {}),
   };
 }
 
@@ -65,6 +83,35 @@ function defaultSubmitErrorRequest(params: { assignment: Assignment; error: unkn
 
 function asClient(client: AgentClient | ClientOptions) {
   return client instanceof AgentClient ? client : new AgentClient(client);
+}
+
+function normalizeExecutionOutput(output: AssignmentExecutionOutput): AssignmentExecutionResult {
+  if (
+    output &&
+    typeof output === "object" &&
+    !Array.isArray(output) &&
+    "result" in output &&
+    output.result &&
+    typeof output.result === "object" &&
+    !Array.isArray(output.result)
+  ) {
+    const actions =
+      "actions" in output && Array.isArray(output.actions)
+        ? (output.actions as AssignmentAction[])
+        : undefined;
+    return {
+      result: output.result as Record<string, unknown>,
+      ...(actions && actions.length > 0 ? { actions } : {}),
+    };
+  }
+
+  if (!output || typeof output !== "object" || Array.isArray(output)) {
+    throw new SdkError("Assignment execution must return an object result");
+  }
+
+  return {
+    result: output as Record<string, unknown>,
+  };
 }
 
 export function createAssignmentSlugRouter(options: AssignmentSlugRouterOptions): AssignmentExecutionHandler {
@@ -92,14 +139,23 @@ export function createAutoSubmitAssignmentHandler(options: AutoSubmitAssignmentH
 
   async function processAssignment(assignment: Assignment) {
     try {
-      const result = await options.runAssignment({ assignment });
+      const execution = normalizeExecutionOutput(await options.runAssignment({ assignment }));
       const submitRequest = options.createSubmitRequest
-        ? options.createSubmitRequest({ assignment, result })
-        : defaultSubmitRequest({ assignment, result });
+        ? options.createSubmitRequest({
+            assignment,
+            result: execution.result,
+            ...(execution.actions ? { actions: execution.actions } : {}),
+          })
+        : defaultSubmitRequest({
+            assignment,
+            result: execution.result,
+            ...(execution.actions ? { actions: execution.actions } : {}),
+          });
       await client.submitResult(submitRequest);
       logger?.info?.("[agent-sdk] assignment_submitted", {
         assignmentId: assignment.assignment_id,
         status: submitRequest.status,
+        actionCount: submitRequest.actions?.length ?? 0,
       });
     } catch (error) {
       const submitErrorRequest = options.createSubmitErrorRequest

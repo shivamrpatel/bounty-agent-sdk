@@ -44,6 +44,38 @@ export type AssignmentResult = {
   error?: string;
 };
 
+export type EmailRecipient = {
+  email: string;
+  name?: string;
+};
+
+export type EmailOutreachMode = "draft" | "send";
+
+export type EmailDeliveryInput = {
+  to: EmailRecipient[];
+  cc?: EmailRecipient[];
+  bcc?: EmailRecipient[];
+  subject: string;
+  textBody: string;
+  htmlBody?: string;
+};
+
+export type IntegrationAction = {
+  type: string;
+  actionKey?: string;
+  operation: string;
+  input: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+};
+
+export type EmailDeliveryAction = IntegrationAction & {
+  type: "email";
+  operation: EmailOutreachMode;
+  input: EmailDeliveryInput;
+};
+
+export type AssignmentAction = IntegrationAction;
+
 export type AssignmentAckStatus = "accepted" | "rejected";
 
 export type AssignmentAckRequest = {
@@ -62,6 +94,7 @@ export type SubmitResultRequest = {
   status: AssignmentStatus;
   result?: Record<string, unknown>;
   error?: string;
+  actions?: AssignmentAction[];
 };
 
 export type SubmitErrorRequest = {

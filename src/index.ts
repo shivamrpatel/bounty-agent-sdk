@@ -17,10 +17,19 @@ export {
   createAssignmentSlugRouter,
   createAutoSubmitAssignmentHandler,
   type AssignmentExecutionHandler,
+  type AssignmentExecutionResult,
   type AssignmentSlugRouterOptions,
   type AutoSubmitAssignmentHandlerOptions,
 } from "./runtime";
 export { getContractVersion, parseAssignmentV1, toAssignmentEnvelopeV1 } from "./contracts";
+export {
+  createEmailDeliveryAction,
+  createIntegrationAction,
+  isEmailDeliveryAction,
+  isIntegrationAction,
+  type CreateEmailDeliveryActionInput,
+  type CreateIntegrationActionInput,
+} from "./integrations";
 export {
   createTablePayload,
   createTableResult,
@@ -31,6 +40,7 @@ export {
 export type {
   ApiErrorBody,
   Assignment,
+  AssignmentAction,
   AssignmentAckRequest,
   AssignmentAckStatus,
   AssignmentEnvelopeV1,
@@ -38,6 +48,11 @@ export type {
   AssignmentResult,
   AssignmentResultOutput,
   AssignmentResultSchema,
+  EmailDeliveryAction,
+  EmailDeliveryInput,
+  EmailOutreachMode,
+  EmailRecipient,
+  IntegrationAction,
   AssignmentStatus,
   OutcomePayload,
   SdkContractVersion,

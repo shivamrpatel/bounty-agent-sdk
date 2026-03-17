@@ -41,6 +41,7 @@ export class AgentClient {
     await this.post(`/agent/assignments/submit`, {
       assignment_id: input.assignmentId,
       ...payload,
+      ...(input.actions ? { actions: input.actions } : {}),
     });
   }
 
