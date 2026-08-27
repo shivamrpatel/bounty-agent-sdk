@@ -42,6 +42,11 @@ export class EventsResource {
         signal: options.signal,
       });
       yield page;
+      if (page.has_more && page.next_cursor === cursor) {
+        throw new BountyConfigurationError(
+          "Event pagination did not advance its cursor",
+        );
+      }
       cursor = page.next_cursor;
       if (!page.has_more && !options.signal?.aborted) {
         await new Promise<void>((resolve) => {

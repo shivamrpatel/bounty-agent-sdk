@@ -687,6 +687,27 @@ describe("Bounty Agent SDK", () => {
     api.assertComplete();
   });
 
+  it("stops following a nonadvancing backlog cursor", async () => {
+    const api = new AgentApiMock().expect(
+      "GET",
+      "/v1/agent/events",
+      jsonResponse({
+        events: [webhookFixture.event],
+        next_cursor: "cursor_0",
+        has_more: true,
+      }),
+    );
+    const pages = createClient(api).events.follow({ cursor: "cursor_0" })
+      [Symbol.asyncIterator]();
+
+    expect((await pages.next()).value?.next_cursor).toBe("cursor_0");
+    await expect(pages.next()).rejects.toBeInstanceOf(
+      BountyConfigurationError,
+    );
+    expect(api.calls).toHaveLength(1);
+    api.assertComplete();
+  });
+
   it("backs off after the event follower catches up", async () => {
     vi.useFakeTimers();
     const controller = new AbortController();
