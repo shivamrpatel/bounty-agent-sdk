@@ -2,6 +2,14 @@
   "name": "@bounty-ai/flue",
   "version": "1.0.0",
   "description": "Official Bounty channel for Flue agents",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shivamrpatel/bounty-agent-sdk.git",
+    "directory": "packages/flue"
+  },
+  "bugs": {
+    "url": "https://github.com/shivamrpatel/bounty-agent-sdk/issues"
+  },
   "type": "module",
   "license": "MIT",
   "sideEffects": false,

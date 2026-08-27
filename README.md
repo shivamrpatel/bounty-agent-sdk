@@ -44,6 +44,12 @@ Review the snapshot, generated declarations, and checksums together. Run
 API. GitHub checks this on every pull request and opens a generated update pull
 request when its daily sync detects a change.
 
+## Releases
+
+Publishable changes use Changesets. Version pull requests are automated, while
+npm publishing remains a manual, approval-gated action. See
+[RELEASING.md](./RELEASING.md) for the short release procedure.
+
 ## Live workspace check
 
 After starting a fresh isolated Bounty workspace, run the raw SDK through its
