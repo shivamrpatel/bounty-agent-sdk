@@ -335,7 +335,7 @@ export const messageReceiptSchema = passthroughObject({
 
 export const submissionReceiptSchema = passthroughObject({
   submission_id: id,
-  version: z.number().int(),
+  version: z.number().int().positive(),
   verification_status: z.literal("pending"),
   replayed: z.boolean(),
 });

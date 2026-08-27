@@ -211,6 +211,32 @@ describe("Bounty Agent SDK", () => {
     api.assertComplete();
   });
 
+  it("rejects messages above the 16-part contract limit", async () => {
+    const api = new AgentApiMock().expect(
+      "GET",
+      "/v1/agent/bounties/bounty_fixture",
+      jsonResponse(bountyDetailsFixture),
+    );
+    const work = await createClient(api).bounties.open("bounty_fixture");
+    const attachments = Array.from({ length: 17 }, (_, index) => ({
+      attachment_id: `attachment_${index}`,
+      filename: `file-${index}.txt`,
+      content_type: "text/plain",
+      size: 1,
+      status: "ready" as const,
+      replayed: false,
+    }));
+
+    expect(() => work.sendMessage({ attachments })).toThrow(
+      BountyConfigurationError,
+    );
+    expect(() => work.sendMessage({
+      text: "See the attached files.",
+      attachments: attachments.slice(0, 16),
+    })).toThrow(BountyConfigurationError);
+    api.assertComplete();
+  });
+
   it("surfaces stable Agent API errors", async () => {
     const api = new AgentApiMock().expect(
       "GET",
@@ -378,6 +404,21 @@ describe("Bounty Agent SDK", () => {
     api.assertComplete();
   });
 
+  it("rejects Bounty details that do not match the requested identity", async () => {
+    const api = new AgentApiMock().expect(
+      "GET",
+      "/v1/agent/bounties/bounty_requested",
+      jsonResponse({
+        ...bountyDetailsFixture,
+        bounty: { ...bountyFixture, _id: "bounty_other" },
+      }),
+    );
+
+    await expect(createClient(api).bounties.open("bounty_requested")).rejects
+      .toBeInstanceOf(BountyInvalidResponseError);
+    api.assertComplete();
+  });
+
   it("freezes every record exposed by a Work snapshot", async () => {
     const api = new AgentApiMock().expect(
       "GET",
@@ -488,6 +529,38 @@ describe("Bounty Agent SDK", () => {
         .toBeInstanceOf(BountyInvalidResponseError);
       api.assertComplete();
     }
+  });
+
+  it("enforces submission request and response version bounds", async () => {
+    const api = new AgentApiMock()
+      .expect("GET", "/v1/agent/bounties/bounty_fixture", jsonResponse(
+        bountyDetailsFixture,
+      ))
+      .expect("POST", "/v1/agent/bounties/bounty_fixture/submissions", jsonResponse({
+        submission_id: "submission_fixture",
+        version: 0,
+        verification_status: "pending",
+        replayed: false,
+      }, 201));
+    const work = await createClient(api).bounties.open("bounty_fixture");
+    const deliverables = Array.from({ length: 51 }, (_, index) => ({
+      key: `result_${index}`,
+      type: "text" as const,
+      data: { text: "Result" },
+    }));
+
+    expect(() => work.submit({ deliverables })).toThrow(
+      BountyConfigurationError,
+    );
+    await expect(work.submit({
+      deliverables: [{
+        key: "result",
+        type: "text",
+        data: { text: "Result" },
+      }],
+      idempotency_key: "submission:result:1",
+    })).rejects.toBeInstanceOf(BountyInvalidResponseError);
+    api.assertComplete();
   });
 
   it("downloads an Agent-owned attachment through its resource", async () => {

@@ -218,6 +218,12 @@ export class WorkImplementation implements Work {
         "A Bounty message needs text or at least one attachment",
       );
     }
+    const partCount = attachments.length + (hasText ? 1 : 0);
+    if (partCount > 16) {
+      throw new BountyConfigurationError(
+        "A Bounty message cannot contain more than 16 parts",
+      );
+    }
 
     const idempotencyKey = input.idempotency_key ?? crypto.randomUUID();
     const body = attachments.length === 0
@@ -263,6 +269,11 @@ export class WorkImplementation implements Work {
     if (input.deliverables.length === 0) {
       throw new BountyConfigurationError(
         "A Bounty submission needs at least one deliverable",
+      );
+    }
+    if (input.deliverables.length > 50) {
+      throw new BountyConfigurationError(
+        "A Bounty submission cannot contain more than 50 deliverables",
       );
     }
     return this.#http.json<SubmissionReceipt>({

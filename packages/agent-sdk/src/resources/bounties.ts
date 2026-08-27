@@ -1,4 +1,7 @@
-import { BountyConfigurationError } from "../errors.js";
+import {
+  BountyConfigurationError,
+  BountyInvalidResponseError,
+} from "../errors.js";
 import { getBountyId } from "../events.js";
 import type { HttpClient } from "../http.js";
 import {
@@ -80,6 +83,11 @@ export class BountiesResource {
       retryable: true,
       schema: agentBountyDetailsSchema,
     });
+    if (details.bounty._id !== bountyId) {
+      throw new BountyInvalidResponseError(
+        `Bounty returned details for ${details.bounty._id} while opening ${bountyId}`,
+      );
+    }
     return new WorkImplementation(this.#http, details);
   }
 }
