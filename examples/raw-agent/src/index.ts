@@ -1,28 +1,20 @@
-import Bounty, {
-  getBountyId,
+import {
+  verifyWebhook,
   type AgentEvent,
-  type BountyOptions,
-  type Work,
 } from "@bounty-ai/agent-sdk";
 
-export interface RawAgentOptions
-  extends Pick<BountyOptions, "apiKey" | "webhookSecret" | "baseURL"> {
-  dispatch(input: { event: AgentEvent; work: Work | null }): Promise<void>;
+export interface RawAgentOptions {
+  webhookSecret: string | readonly string[];
+  dispatch(input: { event: AgentEvent }): Promise<void>;
 }
 
 export function createBountyWebhookReceiver(options: RawAgentOptions) {
-  const bounty = new Bounty({
-    apiKey: options.apiKey,
-    webhookSecret: options.webhookSecret,
-    baseURL: options.baseURL,
-  });
-
   return async function receiveBountyWebhook(request: Request) {
-    const event = await bounty.webhooks.verify(request);
-    const bountyId = getBountyId(event);
-    const work = bountyId ? await bounty.bounties.open(bountyId) : null;
+    const event = await verifyWebhook(request, {
+      secret: options.webhookSecret,
+    });
 
-    await options.dispatch({ event, work });
+    await options.dispatch({ event });
     return new Response(null, { status: 202 });
   };
 }

@@ -357,6 +357,46 @@ describe("Bounty Agent SDK", () => {
     api.assertComplete();
   });
 
+  it("keeps timeout and cancellation active for streamed downloads", async () => {
+    const caller = new AbortController();
+    const reason = new Error("stop download");
+    let requestNumber = 0;
+    const stalledDownloadFetch: typeof globalThis.fetch = (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      requestNumber += 1;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => {
+            controller.error(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+        },
+      });
+      return Promise.resolve(new Response(body));
+    };
+    const client = new Bounty({
+      apiKey: "agent_key_test",
+      baseURL: "https://api.example.test",
+      fetch: stalledDownloadFetch,
+      timeoutMs: 5,
+      maxRetries: 0,
+    });
+
+    const timedResponse = await client.attachments.download("timeout_fixture");
+    await expect(timedResponse.text()).rejects.toBeInstanceOf(
+      BountyTimeoutError,
+    );
+
+    const canceledResponse = await client.attachments.download(
+      "cancel_fixture",
+      { signal: caller.signal },
+    );
+    globalThis.setTimeout(() => caller.abort(reason), 0);
+    await expect(canceledResponse.text()).rejects.toBe(reason);
+    expect(requestNumber).toBe(2);
+  });
+
   it("does not retry attachment preparation", async () => {
     const api = new AgentApiMock()
       .expect("GET", "/v1/agent/bounties/bounty_fixture", jsonResponse(
@@ -594,6 +634,37 @@ describe("Bounty Agent SDK", () => {
     expect(new URL(api.calls[1]!.request.url).searchParams.get("cursor")).toBe(
       "cursor_1",
     );
+    api.assertComplete();
+  });
+
+  it("backs off after the event follower catches up", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const api = new AgentApiMock()
+      .expect("GET", "/v1/agent/events", jsonResponse({
+        events: [],
+        next_cursor: "cursor_1",
+        has_more: false,
+      }))
+      .expect("GET", "/v1/agent/events", jsonResponse({
+        events: [],
+        next_cursor: "cursor_2",
+        has_more: false,
+      }));
+    const pages = createClient(api).events.follow({
+      cursor: "cursor_0",
+      idleDelayMs: 1_000,
+      signal: controller.signal,
+    })[Symbol.asyncIterator]();
+
+    expect((await pages.next()).value?.next_cursor).toBe("cursor_1");
+    const secondPage = pages.next();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(api.calls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await secondPage).value?.next_cursor).toBe("cursor_2");
+    controller.abort();
+    await pages.return?.();
     api.assertComplete();
   });
 

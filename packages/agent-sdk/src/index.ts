@@ -35,6 +35,7 @@ export type {
   CommentReceipt,
   CompleteAttachmentReceipt,
   Deliverable,
+  EventFollowOptions,
   EventPollOptions,
   KnownAgentEvent,
   KnownAgentEventType,

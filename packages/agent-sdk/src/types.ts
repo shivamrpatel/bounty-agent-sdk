@@ -78,6 +78,10 @@ export interface ListOptions extends CallOptions {
 
 export type EventPollOptions = ListOptions;
 
+export interface EventFollowOptions extends EventPollOptions {
+  idleDelayMs?: number | undefined;
+}
+
 export interface VerifyWebhookOptions {
   secret?: string | readonly string[] | undefined;
   toleranceSeconds?: number | undefined;

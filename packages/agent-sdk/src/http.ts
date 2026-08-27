@@ -36,6 +36,13 @@ interface HttpClientOptions {
   fetch: typeof globalThis.fetch;
 }
 
+interface DeferredResponseLifecycle {
+  cleanup(): void;
+  error(cause: unknown): Error;
+}
+
+type DeferResponseCleanup = () => DeferredResponseLifecycle;
+
 export class HttpClient {
   readonly #apiKey: string;
   readonly #baseURL: URL;
@@ -76,12 +83,20 @@ export class HttpClient {
   }
 
   async response(arguments_: RequestArguments): Promise<Response> {
-    return await this.#request(arguments_, async (response) => response);
+    return await this.#request(
+      arguments_,
+      async (response, deferCleanup) => {
+        return this.#streamingResponse(response, deferCleanup);
+      },
+    );
   }
 
   async #request<Result>(
     arguments_: RequestArguments,
-    consume: (response: Response) => Promise<Result>,
+    consume: (
+      response: Response,
+      deferCleanup: DeferResponseCleanup,
+    ) => Promise<Result>,
   ): Promise<Result> {
     const url = arguments_.url
       ? new URL(arguments_.url)
@@ -116,18 +131,48 @@ export class HttpClient {
     for (let attempt = 0; ; attempt += 1) {
       const controller = new AbortController();
       let timedOut = false;
-      const abortFromCaller = () => controller.abort(arguments_.signal?.reason);
+      let cleanupDeferred = false;
+      let cleanedUp = false;
+      let timeout: ReturnType<typeof globalThis.setTimeout> | undefined;
+      const cleanup = () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
+        if (timeout !== undefined) globalThis.clearTimeout(timeout);
+        arguments_.signal?.removeEventListener("abort", abortFromCaller);
+      };
+      const abortFromCaller = () => {
+        controller.abort(arguments_.signal?.reason);
+        cleanup();
+      };
       arguments_.signal?.addEventListener("abort", abortFromCaller, {
         once: true,
       });
       if (arguments_.signal?.aborted) abortFromCaller();
-      const timeout = globalThis.setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, this.#timeoutMs);
-      const cleanup = () => {
-        globalThis.clearTimeout(timeout);
-        arguments_.signal?.removeEventListener("abort", abortFromCaller);
+      if (!cleanedUp) {
+        timeout = globalThis.setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+          cleanup();
+        }, this.#timeoutMs);
+      }
+      const deferCleanup = () => {
+        cleanupDeferred = true;
+        return {
+          cleanup,
+          error: (cause: unknown) => {
+            if (arguments_.signal?.aborted) {
+              return this.#abortError(arguments_.signal);
+            }
+            return timedOut
+              ? new BountyTimeoutError(this.#timeoutMs, { cause })
+              : cause instanceof Error
+              ? cause
+              : new BountyConnectionError(
+                "Could not read the Bounty API response",
+                { cause },
+              );
+          },
+        };
       };
 
       try {
@@ -165,7 +210,7 @@ export class HttpClient {
 
         if (response.ok) {
           try {
-            return await consume(response);
+            return await consume(response, deferCleanup);
           } catch (cause) {
             if (arguments_.signal?.aborted) {
               throw this.#abortError(arguments_.signal);
@@ -207,8 +252,57 @@ export class HttpClient {
         }
         throw error;
       } finally {
-        cleanup();
+        if (!cleanupDeferred) cleanup();
       }
+    }
+  }
+
+  #streamingResponse(
+    response: Response,
+    deferCleanup: DeferResponseCleanup,
+  ) {
+    if (!response.body) return response;
+
+    const reader = response.body.getReader();
+    const lifecycle = deferCleanup();
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      lifecycle.cleanup();
+    };
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const chunk = await reader.read();
+          if (chunk.done) {
+            finish();
+            controller.close();
+          } else {
+            controller.enqueue(chunk.value);
+          }
+        } catch (cause) {
+          finish();
+          controller.error(lifecycle.error(cause));
+        }
+      },
+      async cancel(reason) {
+        try {
+          await reader.cancel(reason);
+        } finally {
+          finish();
+        }
+      },
+    });
+    try {
+      return new Response(body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    } catch (cause) {
+      finish();
+      throw cause;
     }
   }
 
