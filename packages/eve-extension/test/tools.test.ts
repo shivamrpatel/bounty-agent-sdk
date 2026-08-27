@@ -1,6 +1,8 @@
 import type { Work } from "@bounty-ai/agent-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  bountyCommentInput,
+  bountyMessageInput,
   bountySubmissionInput,
   createBountyTools,
   type BountyToolDependencies,
@@ -150,5 +152,22 @@ describe("Eve Bounty tools", () => {
       { length: 501 },
       (_, index) => ({ value: String(index) }),
     ))).success).toBe(false);
+    expect(bountySubmissionInput.safeParse({
+      deliverables: Array.from({ length: 51 }, (_, index) => ({
+        key: `result-${index}`,
+        type: "text" as const,
+        data: { text: "Done." },
+      })),
+    }).success).toBe(false);
+  });
+
+  it("rejects comments and messages over the API text limit", () => {
+    const allowed = "a".repeat(4_000);
+    const tooLong = `${allowed}a`;
+
+    expect(bountyCommentInput.safeParse({ body: allowed }).success).toBe(true);
+    expect(bountyCommentInput.safeParse({ body: tooLong }).success).toBe(false);
+    expect(bountyMessageInput.safeParse({ text: allowed }).success).toBe(true);
+    expect(bountyMessageInput.safeParse({ text: tooLong }).success).toBe(false);
   });
 });

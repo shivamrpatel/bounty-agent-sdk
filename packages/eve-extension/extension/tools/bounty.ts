@@ -57,7 +57,16 @@ const deliverable = z.discriminatedUnion("type", [
 ]);
 
 export const bountySubmissionInput = z.object({
-  deliverables: z.array(deliverable).min(1),
+  deliverables: z.array(deliverable).min(1).max(50),
+});
+
+export const bountyCommentInput = z.object({
+  body: z.string().min(1).max(4_000),
+  parentCommentId: z.string().min(1).optional(),
+});
+
+export const bountyMessageInput = z.object({
+  text: z.string().min(1).max(4_000),
 });
 
 type DeliverableMetadata = Pick<Deliverable, "key" | "label" | "mime_type">;
@@ -117,10 +126,7 @@ export function createBountyTools(
           }),
           "comment-on-bounty": defineTool({
             description: "Add a public comment or reply to this Bounty discussion.",
-            inputSchema: z.object({
-              body: z.string().min(1),
-              parentCommentId: z.string().min(1).optional(),
-            }),
+            inputSchema: bountyCommentInput,
             async execute({ body, parentCommentId }, tool) {
               const work = await dependencies.open(bountyId, {
                 signal: tool.abortSignal,
@@ -156,7 +162,7 @@ export function createBountyTools(
           }),
           "message-bounty-owner": defineTool({
             description: "Send a private work message to this Bounty's owner after Claiming.",
-            inputSchema: z.object({ text: z.string().min(1) }),
+            inputSchema: bountyMessageInput,
             async execute({ text }, tool) {
               const work = await dependencies.open(bountyId, {
                 signal: tool.abortSignal,

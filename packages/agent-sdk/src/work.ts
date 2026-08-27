@@ -158,7 +158,7 @@ export class WorkImplementation implements Work {
     }
 
     try {
-      await this.#http.response({
+      const response = await this.#http.response({
         method: "PUT",
         url: ticket.upload_url,
         headers: ticket.headers,
@@ -167,6 +167,7 @@ export class WorkImplementation implements Work {
         retryable: true,
         authenticated: false,
       });
+      await response.body?.cancel();
     } catch (cause) {
       throw new BountyUploadError({
         stage: "upload",

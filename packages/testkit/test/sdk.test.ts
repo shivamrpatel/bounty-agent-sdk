@@ -130,6 +130,7 @@ describe("Bounty Agent SDK", () => {
   });
 
   it("uploads separately, then sends the durable attachment reference", async () => {
+    let uploadBodyCanceled = false;
     const api = new AgentApiMock()
       .expect("GET", "/v1/agent/bounties/bounty_fixture", jsonResponse(
         bountyDetailsFixture,
@@ -146,7 +147,11 @@ describe("Bounty Agent SDK", () => {
       .expect("PUT", "/object", (request) => {
         expect(request.headers.get("authorization")).toBeNull();
         expect(request.headers.get("content-type")).toBe("text/plain");
-        return new Response(null, { status: 200 });
+        return new Response(new ReadableStream({
+          cancel() {
+            uploadBodyCanceled = true;
+          },
+        }), { status: 200 });
       })
       .expect(
         "POST",
@@ -181,6 +186,7 @@ describe("Bounty Agent SDK", () => {
       ],
       idempotency_key: "message:result:1",
     });
+    expect(uploadBodyCanceled).toBe(true);
     api.assertComplete();
   });
 
