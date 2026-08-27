@@ -30,6 +30,20 @@ pnpm test
 Examples live under `examples/` and exercise the same public package entry
 points that consumers install.
 
+## OpenAPI contract
+
+The live Agent API is the source of truth for SDK request and response types.
+To pull the latest contract and regenerate the pinned declarations, run:
+
+```bash
+pnpm openapi:update
+```
+
+Review the snapshot, generated declarations, and checksums together. Run
+`pnpm openapi:check` to confirm they reproduce cleanly and still match the live
+API. GitHub checks this on every pull request and opens a generated update pull
+request when its daily sync detects a change.
+
 ## Live workspace check
 
 After starting a fresh isolated Bounty workspace, run the raw SDK through its

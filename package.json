@@ -17,6 +17,7 @@
     "test:package": "pnpm build && node scripts/test-packed-sdk.mjs",
     "typecheck": "turbo run typecheck",
     "openapi:check": "node scripts/check-openapi.mjs",
+    "openapi:update": "node scripts/update-openapi.mjs",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm openapi:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test && changeset publish"
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@changesets/cli": "3.0.1",
     "@oxlint/plugins": "1.79.0",
+    "openapi-typescript": "7.13.0",
     "oxlint": "1.79.0",
     "turbo": "2.10.12",
     "typescript": "6.0.3"

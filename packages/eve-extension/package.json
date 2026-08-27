@@ -35,7 +35,7 @@
   "scripts": {
     "build": "eve extension build",
     "clean": "rimraf dist",
-    "prepare": "eve extension build",
+    "prepack": "pnpm build",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
@@ -44,7 +44,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/node": "26.4.0",
+    "@types/node": "26.3.0",
     "eve": "0.45.2",
     "rimraf": "6.1.3",
     "typescript": "5.9.3",
