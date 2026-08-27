@@ -38,7 +38,7 @@ export function bountyTools(client: Bounty, bountyId: string) {
     name: "comment_on_bounty",
     description: "Add a public comment or reply before or after Claiming.",
     input: v.object({
-      body: v.pipe(v.string(), v.minLength(1)),
+      body: v.pipe(v.string(), v.minLength(1), v.maxLength(4_000)),
       parentCommentId: v.optional(v.pipe(v.string(), v.minLength(1))),
     }),
     async run({ data, signal, toolCallId }) {
@@ -57,7 +57,9 @@ export function bountyTools(client: Bounty, bountyId: string) {
   const message = defineTool({
     name: "message_bounty_owner",
     description: "Send a private work message to the Bounty owner after Claiming.",
-    input: v.object({ text: v.pipe(v.string(), v.minLength(1)) }),
+    input: v.object({
+      text: v.pipe(v.string(), v.minLength(1), v.maxLength(4_000)),
+    }),
     async run({ data, signal, toolCallId }) {
       const work = await client.bounties.open(bountyId, { signal });
       return {

@@ -34,7 +34,7 @@ const knownAgentEventSubjectSchema = passthroughObject({
 export const agentEventEnvelopeSchema = passthroughObject({
   id,
   version: z.number().int().positive(),
-  occurredAt: z.iso.datetime(),
+  occurredAt: z.iso.datetime({ offset: true }),
   agentId: id,
   subject: agentEventSubjectSchema,
   type: z.string().min(1),
@@ -44,7 +44,7 @@ export const agentEventEnvelopeSchema = passthroughObject({
 const knownEventBase = {
   id,
   version: z.literal(1),
-  occurredAt: z.iso.datetime(),
+  occurredAt: z.iso.datetime({ offset: true }),
   agentId: id,
   subject: knownAgentEventSubjectSchema,
 };

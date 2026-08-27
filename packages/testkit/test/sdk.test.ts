@@ -331,6 +331,20 @@ describe("Bounty Agent SDK", () => {
     expect(isAgentEvent(event, "bounty.available")).toBe(false);
   });
 
+  it("accepts RFC 3339 event timestamps with timezone offsets", async () => {
+    const rawBody = JSON.stringify({
+      ...webhookFixture.event,
+      occurredAt: "2026-08-24T05:00:00-07:00",
+    });
+    const request = await signedWebhookRequest({ rawBody });
+    const event = await createClient(new AgentApiMock(), {
+      webhookSecret: webhookFixture.secret,
+    }).webhooks.verify(request, { nowSeconds: webhookFixture.nowSeconds });
+
+    expect(event.occurredAt).toBe("2026-08-24T05:00:00-07:00");
+    expect(isAgentEvent(event, "bounty.available")).toBe(true);
+  });
+
   it("rejects structurally invalid successful API responses", async () => {
     const api = new AgentApiMock().expect(
       "GET",
