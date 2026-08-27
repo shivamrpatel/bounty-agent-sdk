@@ -267,6 +267,47 @@ describe("Bounty Agent SDK", () => {
     api.assertComplete();
   });
 
+  it("retries safe writes when a successful response body drops", async () => {
+    const bodies: unknown[] = [];
+    const droppedBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"comment_id":'));
+        controller.error(new TypeError("Connection reset"));
+      },
+    });
+    const api = new AgentApiMock()
+      .expect("GET", "/v1/agent/bounties/bounty_fixture", jsonResponse(
+        bountyDetailsFixture,
+      ))
+      .expect("POST", "/v1/agent/bounties/bounty_fixture/comments", async (request) => {
+        bodies.push(await request.json());
+        return new Response(droppedBody, {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      })
+      .expect("POST", "/v1/agent/bounties/bounty_fixture/comments", async (request) => {
+        bodies.push(await request.json());
+        return jsonResponse({
+          comment_id: "comment_fixture",
+          watching: true,
+          replayed: false,
+        }, 201);
+      });
+    const work = await createClient(api, { maxRetries: 1 }).bounties.open(
+      "bounty_fixture",
+    );
+
+    await work.comment({
+      body: "Can you clarify the format?",
+      idempotency_key: "comment:clarify:1",
+    });
+
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toEqual(bodies[1]);
+    api.assertComplete();
+  });
+
   it("verifies the fixed webhook fixture and narrows known events", async () => {
     const api = new AgentApiMock();
     const client = createClient(api, { webhookSecret: webhookFixture.secret });
@@ -337,6 +378,54 @@ describe("Bounty Agent SDK", () => {
     api.assertComplete();
   });
 
+  it("freezes every record exposed by a Work snapshot", async () => {
+    const api = new AgentApiMock().expect(
+      "GET",
+      "/v1/agent/bounties/bounty_fixture",
+      jsonResponse({
+        bounty: bountyFixture,
+        attachments: [{
+          fileUploadId: "attachment_fixture",
+          filename: "brief.txt",
+          contentType: "text/plain",
+          size: 5,
+          url: null,
+          created_at: 1_787_572_100_000,
+        }],
+        comments: [{
+          _id: "comment_fixture",
+          author: {
+            type: "agent",
+            agent_id: "agent_fixture",
+            name: "Research Agent",
+            verified: true,
+            rating_average: 5,
+          },
+          body: "I can complete this.",
+          created_at: 1_787_572_200_000,
+          updated_at: 1_787_572_200_000,
+        }],
+        claim: {
+          claim_id: "claim_fixture",
+          bounty_id: "bounty_fixture",
+          agent_id: "agent_fixture",
+          bounty_version: 3,
+          status: "active",
+          created_at: 1_787_572_300_000,
+        },
+      }),
+    );
+    const work = await createClient(api).bounties.open("bounty_fixture");
+
+    expect(Object.isFrozen(work.attachments)).toBe(true);
+    expect(Object.isFrozen(work.attachments[0])).toBe(true);
+    expect(Object.isFrozen(work.comments)).toBe(true);
+    expect(Object.isFrozen(work.comments[0])).toBe(true);
+    expect(Object.isFrozen(work.comments[0]?.author)).toBe(true);
+    expect(Object.isFrozen(work.currentClaim)).toBe(true);
+    api.assertComplete();
+  });
+
   it("does not narrow a future event version to the current data contract", async () => {
     const rawBody = JSON.stringify({
       ...webhookFixture.event,
@@ -384,6 +473,8 @@ describe("Bounty Agent SDK", () => {
       { ...bountyFixture, amount_cents: -1 },
       { ...bountyFixture, currency: "" },
       { ...bountyFixture, version: 0 },
+      { ...bountyFixture, delivery_window_ms: -1 },
+      { ...bountyFixture, delivery_window_ms: 1.5 },
     ];
 
     for (const bounty of invalidBounties) {

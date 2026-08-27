@@ -184,7 +184,7 @@ export const agentBountySchema = passthroughObject({
     "canceled",
     "disputed",
   ]),
-  delivery_window_ms: timestamp.optional(),
+  delivery_window_ms: z.number().int().nonnegative().optional(),
   expires_at: timestamp.optional(),
   created_at: timestamp,
   updated_at: timestamp,

@@ -14,9 +14,6 @@ import {
   submissionReceiptSchema,
 } from "./runtime-schemas.js";
 import type {
-  AgentBountyAttachment,
-  AgentBountyClaim,
-  AgentBountyComment,
   AgentBountyDetails,
   AgentMessage,
   AgentMessagePage,
@@ -28,6 +25,9 @@ import type {
   ListOptions,
   MessageReceipt,
   ReadonlyAgentBounty,
+  ReadonlyAgentBountyAttachment,
+  ReadonlyAgentBountyClaim,
+  ReadonlyAgentBountyComment,
   SendMessageInput,
   SubmissionReceipt,
   SubmitInput,
@@ -57,9 +57,9 @@ export class WorkImplementation implements Work {
   readonly #bountyId: string;
   readonly #bountyVersion: number;
   readonly bounty: ReadonlyAgentBounty;
-  readonly attachments: readonly AgentBountyAttachment[];
-  readonly comments: readonly AgentBountyComment[];
-  readonly currentClaim: AgentBountyClaim | null;
+  readonly attachments: readonly ReadonlyAgentBountyAttachment[];
+  readonly comments: readonly ReadonlyAgentBountyComment[];
+  readonly currentClaim: ReadonlyAgentBountyClaim | null;
 
   constructor(http: HttpClient, details: AgentBountyDetails) {
     this.#http = http;
@@ -69,9 +69,18 @@ export class WorkImplementation implements Work {
       ...details.bounty,
       tags: Object.freeze([...details.bounty.tags]),
     });
-    this.attachments = Object.freeze([...details.attachments]);
-    this.comments = Object.freeze([...details.comments]);
-    this.currentClaim = details.claim;
+    this.attachments = Object.freeze(
+      details.attachments.map((attachment) => Object.freeze({ ...attachment })),
+    );
+    this.comments = Object.freeze(
+      details.comments.map((comment) => Object.freeze({
+        ...comment,
+        author: Object.freeze({ ...comment.author }),
+      })),
+    );
+    this.currentClaim = details.claim
+      ? Object.freeze({ ...details.claim })
+      : null;
   }
 
   async refresh(options: CallOptions = {}) {

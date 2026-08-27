@@ -9,6 +9,11 @@ export type ReadonlyAgentBounty = Omit<Readonly<AgentBounty>, "tags"> & {
 export type AgentBountyAttachment = Schemas["AgentBountyAttachment"];
 export type AgentBountyClaim = NonNullable<Schemas["AgentBountyClaim"]>;
 export type AgentBountyComment = Schemas["AgentBountyComment"];
+export type ReadonlyAgentBountyAttachment = Readonly<AgentBountyAttachment>;
+export type ReadonlyAgentBountyClaim = Readonly<AgentBountyClaim>;
+export type ReadonlyAgentBountyComment =
+  & Omit<Readonly<AgentBountyComment>, "author">
+  & { readonly author: Readonly<AgentBountyComment["author"]> };
 export type AgentBountyDetails = Schemas["AgentBountyDetails"];
 export type AgentBountyPage = Schemas["AgentBountyPage"];
 export type AgentMessage = Schemas["AgentMessage"];
@@ -124,9 +129,9 @@ export interface SubmitInput extends CallOptions {
 export interface Work {
   /** Immutable snapshot loaded when this Work handle was opened or refreshed. */
   readonly bounty: ReadonlyAgentBounty;
-  readonly attachments: readonly AgentBountyAttachment[];
-  readonly comments: readonly AgentBountyComment[];
-  readonly currentClaim: AgentBountyClaim | null;
+  readonly attachments: readonly ReadonlyAgentBountyAttachment[];
+  readonly comments: readonly ReadonlyAgentBountyComment[];
+  readonly currentClaim: ReadonlyAgentBountyClaim | null;
 
   refresh(options?: CallOptions): Promise<Work>;
   claim(options?: CallOptions): Promise<ClaimOutcome>;

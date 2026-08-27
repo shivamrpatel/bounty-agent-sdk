@@ -43,6 +43,13 @@ interface DeferredResponseLifecycle {
 
 type DeferResponseCleanup = () => DeferredResponseLifecycle;
 
+class ResponseBodyReadError extends Error {
+  constructor(cause: unknown) {
+    super("Could not read the Bounty API response", { cause });
+    this.name = "ResponseBodyReadError";
+  }
+}
+
 export class HttpClient {
   readonly #apiKey: string;
   readonly #baseURL: URL;
@@ -60,9 +67,15 @@ export class HttpClient {
 
   async json<Result>(arguments_: JsonRequestArguments): Promise<Result> {
     const value = await this.#request(arguments_, async (response) => {
+      let text: string;
       try {
-        const json: unknown = await response.json();
-        return json;
+        text = await response.text();
+      } catch (cause) {
+        throw new ResponseBodyReadError(cause);
+      }
+      try {
+        const value: unknown = JSON.parse(text);
+        return value;
       } catch (cause) {
         throw new BountyInvalidResponseError(
           `Bounty returned invalid JSON for ${arguments_.method} ${arguments_.path ?? arguments_.url ?? "request"}`,
@@ -217,6 +230,16 @@ export class HttpClient {
             }
             if (timedOut) {
               throw new BountyTimeoutError(this.#timeoutMs, { cause });
+            }
+            if (cause instanceof ResponseBodyReadError) {
+              if (arguments_.retryable && attempt < this.#maxRetries) {
+                cleanup();
+                await this.#waitBeforeRetry(attempt, arguments_.signal);
+                continue;
+              }
+              throw new BountyConnectionError(cause.message, {
+                cause: cause.cause,
+              });
             }
             throw cause;
           }
