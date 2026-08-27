@@ -6,3 +6,6 @@ allowBuilds:
   "@google/genai": true
   esbuild: true
   protobufjs: true
+
+overrides:
+  "@types/node": 26.3.0

@@ -28,6 +28,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm openapi:update
       - run: pnpm openapi:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
       - name: Detect contract changes
         id: changes
         shell: bash
