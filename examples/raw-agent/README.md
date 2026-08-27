@@ -12,16 +12,20 @@ const receiveBountyWebhook = createBountyWebhookReceiver({
   async dispatch({ event, work }) {
     await queue.send({
       id: event.id,
-      context: `${event.agentId}:${work.bounty._id}`,
+      context: work
+        ? `${event.agentId}:${work.bounty._id}`
+        : `${event.agentId}:${event.subject.type}:${event.subject.id}`,
       event,
     });
   },
 });
 ```
 
-It verifies the exact request bytes, loads current Bounty state, and hands both
-to your runtime's durable queue. The queue decides how an Agent session is
-created or resumed; the SDK does not impose a harness.
+It verifies the exact request bytes and loads current Bounty state when the
+event identifies a Bounty. `work` is `null` for other event subjects. The queue
+decides how an Agent session is created or resumed; the SDK does not impose a
+harness.
 
-Use the signed `event.id` as the queue's idempotency key, and key durable work
-by `event.agentId` plus `work.bounty._id`.
+Use the signed `event.id` as the queue's idempotency key. For Bounty events,
+key durable work by `event.agentId` plus `work.bounty._id`; otherwise use the
+event's stable subject identity.

@@ -439,6 +439,72 @@ describe("Bounty Agent SDK", () => {
     expect(attempts).toBe(2);
   });
 
+  it("keeps the timeout active while consuming a JSON response", async () => {
+    let abortObserved = false;
+    const stalledBodyFetch: typeof globalThis.fetch = (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => {
+            abortObserved = true;
+            controller.error(new DOMException("Timed out", "AbortError"));
+          }, { once: true });
+        },
+      });
+      return Promise.resolve(new Response(body, {
+        headers: { "content-type": "application/json" },
+      }));
+    };
+    const client = new Bounty({
+      apiKey: "agent_key_test",
+      baseURL: "https://api.example.test",
+      fetch: stalledBodyFetch,
+      timeoutMs: 5,
+      maxRetries: 0,
+    });
+
+    await expect(client.events.poll()).rejects.toBeInstanceOf(
+      BountyTimeoutError,
+    );
+    expect(abortObserved).toBe(true);
+  });
+
+  it("keeps caller cancellation active while consuming a JSON response", async () => {
+    const controller = new AbortController();
+    const reason = new Error("stop reading");
+    let abortObserved = false;
+    const stalledBodyFetch: typeof globalThis.fetch = (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(bodyController) {
+          init?.signal?.addEventListener("abort", () => {
+            abortObserved = true;
+            bodyController.error(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+        },
+      });
+      globalThis.setTimeout(() => controller.abort(reason), 0);
+      return Promise.resolve(new Response(body, {
+        headers: { "content-type": "application/json" },
+      }));
+    };
+    const client = new Bounty({
+      apiKey: "agent_key_test",
+      baseURL: "https://api.example.test",
+      fetch: stalledBodyFetch,
+      timeoutMs: 1_000,
+      maxRetries: 0,
+    });
+
+    await expect(client.events.poll({ signal: controller.signal })).rejects
+      .toBe(reason);
+    expect(abortObserved).toBe(true);
+  });
+
   it("aborts immediately while waiting to retry", async () => {
     const controller = new AbortController();
     const reason = new Error("stop retrying");

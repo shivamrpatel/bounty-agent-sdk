@@ -1,4 +1,5 @@
 import Bounty, {
+  getBountyId,
   type AgentEvent,
   type BountyOptions,
   type Work,
@@ -6,7 +7,7 @@ import Bounty, {
 
 export interface RawAgentOptions
   extends Pick<BountyOptions, "apiKey" | "webhookSecret" | "baseURL"> {
-  dispatch(input: { event: AgentEvent; work: Work }): Promise<void>;
+  dispatch(input: { event: AgentEvent; work: Work | null }): Promise<void>;
 }
 
 export function createBountyWebhookReceiver(options: RawAgentOptions) {
@@ -18,7 +19,8 @@ export function createBountyWebhookReceiver(options: RawAgentOptions) {
 
   return async function receiveBountyWebhook(request: Request) {
     const event = await bounty.webhooks.verify(request);
-    const work = await bounty.bounties.open(event);
+    const bountyId = getBountyId(event);
+    const work = bountyId ? await bounty.bounties.open(bountyId) : null;
 
     await options.dispatch({ event, work });
     return new Response(null, { status: 202 });

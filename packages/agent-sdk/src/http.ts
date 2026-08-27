@@ -52,16 +52,17 @@ export class HttpClient {
   }
 
   async json<Result>(arguments_: JsonRequestArguments): Promise<Result> {
-    const response = await this.response(arguments_);
-    let value: unknown;
-    try {
-      value = await response.json();
-    } catch (cause) {
-      throw new BountyInvalidResponseError(
-        `Bounty returned invalid JSON for ${arguments_.method} ${arguments_.path ?? arguments_.url ?? "request"}`,
-        { cause },
-      );
-    }
+    const value = await this.#request(arguments_, async (response) => {
+      try {
+        const json: unknown = await response.json();
+        return json;
+      } catch (cause) {
+        throw new BountyInvalidResponseError(
+          `Bounty returned invalid JSON for ${arguments_.method} ${arguments_.path ?? arguments_.url ?? "request"}`,
+          { cause },
+        );
+      }
+    });
     const parsed = arguments_.schema.safeParse(value);
     if (!parsed.success) {
       throw new BountyInvalidResponseError(
@@ -75,6 +76,13 @@ export class HttpClient {
   }
 
   async response(arguments_: RequestArguments): Promise<Response> {
+    return await this.#request(arguments_, async (response) => response);
+  }
+
+  async #request<Result>(
+    arguments_: RequestArguments,
+    consume: (response: Response) => Promise<Result>,
+  ): Promise<Result> {
     const url = arguments_.url
       ? new URL(arguments_.url)
       : new URL(arguments_.path ?? "", this.#baseURL);
@@ -117,9 +125,13 @@ export class HttpClient {
         timedOut = true;
         controller.abort();
       }, this.#timeoutMs);
+      const cleanup = () => {
+        globalThis.clearTimeout(timeout);
+        arguments_.signal?.removeEventListener("abort", abortFromCaller);
+      };
 
-      let response: Response;
       try {
+        let response: Response;
         const requestInit: RequestInit = {
           method: arguments_.method,
           headers,
@@ -129,52 +141,74 @@ export class HttpClient {
         if (arguments_.redirect !== undefined) {
           requestInit.redirect = arguments_.redirect;
         }
-        response = await this.#fetch(url, requestInit);
-      } catch (cause) {
+        try {
+          response = await this.#fetch(url, requestInit);
+        } catch (cause) {
+          if (arguments_.signal?.aborted) {
+            throw this.#abortError(arguments_.signal);
+          }
+          if (
+            arguments_.retryable &&
+            attempt < this.#maxRetries
+          ) {
+            cleanup();
+            await this.#waitBeforeRetry(attempt, arguments_.signal);
+            continue;
+          }
+          if (timedOut) {
+            throw new BountyTimeoutError(this.#timeoutMs, { cause });
+          }
+          throw new BountyConnectionError("Could not reach the Bounty API", {
+            cause,
+          });
+        }
+
+        if (response.ok) {
+          try {
+            return await consume(response);
+          } catch (cause) {
+            if (arguments_.signal?.aborted) {
+              throw this.#abortError(arguments_.signal);
+            }
+            if (timedOut) {
+              throw new BountyTimeoutError(this.#timeoutMs, { cause });
+            }
+            throw cause;
+          }
+        }
+
+        const retryAfterMs = this.#retryAfterMs(response.headers);
+        const canWaitAutomatically = retryAfterMs === undefined ||
+          retryAfterMs <= maxAutomaticRetryAfterMs;
+        if (
+          arguments_.retryable &&
+          attempt < this.#maxRetries &&
+          canWaitAutomatically &&
+          (response.status === 408 ||
+            response.status === 429 ||
+            response.status >= 500)
+        ) {
+          await response.body?.cancel().catch(() => undefined);
+          cleanup();
+          await this.#waitBeforeRetry(
+            attempt,
+            arguments_.signal,
+            retryAfterMs,
+          );
+          continue;
+        }
+
+        const error = await this.#apiError(response, retryAfterMs);
         if (arguments_.signal?.aborted) {
           throw this.#abortError(arguments_.signal);
         }
-        if (
-          arguments_.retryable &&
-          attempt < this.#maxRetries
-        ) {
-          await this.#waitBeforeRetry(attempt, arguments_.signal);
-          continue;
-        }
         if (timedOut) {
-          throw new BountyTimeoutError(this.#timeoutMs, { cause });
+          throw new BountyTimeoutError(this.#timeoutMs, { cause: error });
         }
-        throw new BountyConnectionError("Could not reach the Bounty API", {
-          cause,
-        });
+        throw error;
       } finally {
-        globalThis.clearTimeout(timeout);
-        arguments_.signal?.removeEventListener("abort", abortFromCaller);
+        cleanup();
       }
-
-      if (response.ok) return response;
-
-      const retryAfterMs = this.#retryAfterMs(response.headers);
-      const canWaitAutomatically = retryAfterMs === undefined ||
-        retryAfterMs <= maxAutomaticRetryAfterMs;
-      if (
-        arguments_.retryable &&
-        attempt < this.#maxRetries &&
-        canWaitAutomatically &&
-        (response.status === 408 ||
-          response.status === 429 ||
-          response.status >= 500)
-      ) {
-        await response.body?.cancel().catch(() => undefined);
-        await this.#waitBeforeRetry(
-          attempt,
-          arguments_.signal,
-          retryAfterMs,
-        );
-        continue;
-      }
-
-      throw await this.#apiError(response, retryAfterMs);
     }
   }
 
