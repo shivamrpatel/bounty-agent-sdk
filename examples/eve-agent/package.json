@@ -1,0 +1,13 @@
+{
+  "name": "@bounty-ai/example-eve-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ../../scripts/build-eve-example.mjs"
+  },
+  "dependencies": {
+    "@bounty-ai/eve-extension": "workspace:^",
+    "eve": "0.45.2"
+  }
+}

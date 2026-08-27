@@ -1,0 +1,124 @@
+import type { Work } from "@bounty-ai/agent-sdk";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createBountyTools,
+  type BountyToolDependencies,
+} from "../extension/tools/bounty.js";
+
+const bountyDetails = vi.fn<BountyToolDependencies["details"]>();
+const claim = vi.fn<Work["claim"]>();
+const comment = vi.fn<Work["comment"]>();
+const channelMetadata = vi.fn<BountyToolDependencies["metadata"]>();
+const messages = vi.fn<Work["messages"]>();
+const open = vi.fn<BountyToolDependencies["open"]>();
+const sendMessage = vi.fn<Work["sendMessage"]>();
+const submit = vi.fn<Work["submit"]>();
+const bountyTools = createBountyTools({
+  details: bountyDetails,
+  metadata: channelMetadata,
+  open,
+});
+
+const resolveTools = bountyTools.events["session.started"];
+if (!resolveTools) throw new Error("Bounty tool resolver is missing");
+
+describe("Eve Bounty tools", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    channelMetadata.mockReturnValue({
+      agentId: "agent_1",
+      bountyId: "bounty_1",
+    });
+  });
+
+  it("binds marketplace writes to trusted channel state and stable call IDs", async () => {
+    const signal = new AbortController().signal;
+    const work = {
+      claim,
+      comment,
+      messages,
+      sendMessage,
+      submit,
+    };
+    // SAFETY: Each test invokes only the Work methods implemented by this fake.
+    open.mockResolvedValue(work as never);
+    comment.mockResolvedValue({
+      comment_id: "comment_1",
+      watching: true,
+      replayed: false,
+    });
+    sendMessage.mockResolvedValue({
+      message: {
+        _id: "message_1",
+        bounty_id: "bounty_1",
+        claim_id: "claim_1",
+        author_type: "agent",
+        agent_id: "agent_1",
+        content: { type: "text", text: "Starting now." },
+        parts: [{ type: "text", text: "Starting now." }],
+        idempotency_key: "eve:call_1:message",
+        created_at: 1,
+      },
+      replayed: false,
+    });
+    submit.mockResolvedValue({
+      submission_id: "submission_1",
+      version: 1,
+      verification_status: "pending",
+      replayed: false,
+    });
+
+    // SAFETY: The resolver reads only channel metadata from this Eve event context.
+    const tools = await resolveTools({} as never, {
+      channel: {
+        kind: "channel:bounty",
+        metadata: { agentId: "agent_1", bountyId: "bounty_1" },
+      },
+    } as never);
+    expect(tools).not.toBeNull();
+    if (!tools || !("comment-on-bounty" in tools)) {
+      throw new Error("Bounty tools were not resolved");
+    }
+
+    // SAFETY: Tool execution reads only the abort signal and stable call ID.
+    const context = { abortSignal: signal, callId: "call_1" } as never;
+    await tools["comment-on-bounty"].execute({ body: "Can you clarify?" }, context);
+    await tools["message-bounty-owner"].execute({ text: "Starting now." }, context);
+    await tools["submit-bounty"].execute({
+      deliverables: [{
+        key: "report",
+        type: "text",
+        data: { text: "Done." },
+      }],
+    }, context);
+
+    expect(open).toHaveBeenCalledTimes(3);
+    expect(open).toHaveBeenCalledWith("bounty_1", { signal });
+    expect(comment).toHaveBeenCalledWith({
+      body: "Can you clarify?",
+      parent_comment_id: undefined,
+      idempotency_key: "eve:call_1:comment",
+      signal,
+    });
+    expect(sendMessage).toHaveBeenCalledWith({
+      text: "Starting now.",
+      idempotency_key: "eve:call_1:message",
+      signal,
+    });
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({
+      idempotency_key: "eve:call_1:submission",
+      signal,
+    }));
+  });
+
+  it("does not expose Bounty-scoped tools outside the Bounty channel", async () => {
+    channelMetadata.mockReturnValueOnce(undefined);
+
+    // SAFETY: The resolver reads only channel identity from this Eve context.
+    const tools = await resolveTools({} as never, {
+      channel: { kind: "channel:other", metadata: {} },
+    } as never);
+
+    expect(tools).toBeNull();
+  });
+});

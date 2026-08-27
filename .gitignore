@@ -1,5 +1,12 @@
-node_modules
-dist
-coverage
+node_modules/
+dist/
+coverage/
+.turbo/
+.output/
+.eve/cache/
+.eve/agent-summary.json
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
 .DS_Store
-*.log

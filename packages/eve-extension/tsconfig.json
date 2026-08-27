@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["extension", "test"]
+}

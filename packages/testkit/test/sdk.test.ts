@@ -1,0 +1,632 @@
+import Bounty, {
+  BountyApiError,
+  BountyConfigurationError,
+  BountyInvalidResponseError,
+  BountyTimeoutError,
+  BountyUploadError,
+  BountyWebhookError,
+  isAgentEvent,
+  verifyWebhook,
+  type BountyOptions,
+} from "@bounty-ai/agent-sdk";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  AgentApiMock,
+  agentMessageFixture,
+  bountyDetailsFixture,
+  bountyFixture,
+  jsonResponse,
+  webhookFixture,
+} from "../src/index.js";
+
+function createClient(
+  api: AgentApiMock,
+  options: Partial<BountyOptions> = {},
+) {
+  return new Bounty({
+    apiKey: "agent_key_test",
+    baseURL: "https://api.example.test",
+    fetch: api.fetch,
+    maxRetries: 0,
+    ...options,
+  });
+}
+
+async function signedWebhookRequest(args: {
+  rawBody: string | Uint8Array;
+  secret?: string;
+  webhookId?: string;
+  timestamp?: string;
+}) {
+  const secret = args.secret ?? webhookFixture.secret;
+  const webhookId = args.webhookId ?? webhookFixture.event.id;
+  const timestamp = args.timestamp ?? webhookFixture.headers["webhook-timestamp"];
+  const rawBody = args.rawBody instanceof Uint8Array
+    ? args.rawBody
+    : new TextEncoder().encode(args.rawBody);
+  const encodedSecret = secret.startsWith("whsec_") ? secret.slice(6) : secret;
+  const binarySecret = atob(encodedSecret);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    Uint8Array.from(binarySecret, (character) => character.charCodeAt(0)),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const prefix = new TextEncoder().encode(`${webhookId}.${timestamp}.`);
+  const signedBody = new Uint8Array(prefix.byteLength + rawBody.byteLength);
+  signedBody.set(prefix);
+  signedBody.set(rawBody, prefix.byteLength);
+  const signature = await crypto.subtle.sign("HMAC", key, signedBody);
+  const encodedSignature = btoa(
+    String.fromCharCode(...new Uint8Array(signature)),
+  );
+
+  return new Request("https://agent.example.test/webhooks/bounty", {
+    method: "POST",
+    headers: {
+      "webhook-id": webhookId,
+      "webhook-timestamp": timestamp,
+      "webhook-signature": `v1,${encodedSignature}`,
+    },
+    body: rawBody,
+  });
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("Bounty Agent SDK", () => {
+  it("uses a configured client with resource-shaped reads", async () => {
+    const api = new AgentApiMock().expect(
+      "GET",
+      "/v1/agent/bounties",
+      jsonResponse({
+        bounties: [bountyFixture],
+        next_cursor: "cursor_1",
+        is_done: true,
+      }),
+    );
+    const page = await createClient(api).bounties.list({ limit: 5 });
+
+    expect(page.bounties).toEqual([bountyFixture]);
+    const request = api.calls[0]!.request;
+    expect(request.headers.get("authorization")).toBe(
+      "Bearer agent_key_test",
+    );
+    expect(new URL(request.url).searchParams.get("limit")).toBe("5");
+    api.assertComplete();
+  });
+
+  it("opens current context from an event and claims its loaded version", async () => {
+    const api = new AgentApiMock()
+      .expect("GET", "/v1/agent/bounties/bounty_fixture", jsonResponse(
+        bountyDetailsFixture,
+      ))
+      .expect("POST", "/v1/agent/bounties/bounty_fixture/claims", () => {
+        return jsonResponse({
+          outcome: "claimed",
+          claim: {
+            claim_id: "claim_fixture",
+            bounty_id: "bounty_fixture",
+            agent_id: "agent_fixture",
+            bounty_version: 3,
+            status: "active",
+            created_at: 1_787_572_900_000,
+          },
+          replayed: false,
+        });
+      });
+    const client = createClient(api);
+    const work = await client.bounties.open(webhookFixture.event);
+    const outcome = await work.claim();
+
+    expect(work.currentClaim).toBeNull();
+    expect(outcome.outcome).toBe("claimed");
+    expect(await api.calls[1]!.request.json()).toEqual({ expected_version: 3 });
+    api.assertComplete();
+  });
+
+  it("uploads separately, then sends the durable attachment reference", async () => {
+    const api = new AgentApiMock()
+      .expect("GET", "/v1/agent/bounties/bounty_fixture", jsonResponse(
+        bountyDetailsFixture,
+      ))
+      .expect("POST", "/v1/agent/bounties/bounty_fixture/attachments", jsonResponse({
+        attachment_id: "attachment_fixture",
+        upload_url: "https://uploads.example.test/object",
+        headers: {
+          "content-type": "text/plain",
+          "content-disposition": 'attachment; filename="result.txt"',
+        },
+        expires_at: 1_787_573_200_000,
+      }, 201))
+      .expect("PUT", "/object", (request) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        expect(request.headers.get("content-type")).toBe("text/plain");
+        return new Response(null, { status: 200 });
+      })
+      .expect(
+        "POST",
+        "/v1/agent/attachments/attachment_fixture/complete",
+        jsonResponse({
+          attachment_id: "attachment_fixture",
+          size: 6,
+          status: "ready",
+          replayed: false,
+        }),
+      )
+      .expect("POST", "/v1/agent/bounties/bounty_fixture/messages", jsonResponse({
+        message: agentMessageFixture,
+        replayed: false,
+      }, 201));
+    const work = await createClient(api).bounties.open("bounty_fixture");
+    const attachment = await work.upload({
+      filename: "result.txt",
+      content_type: "text/plain",
+      body: new TextEncoder().encode("result"),
+    });
+    await work.sendMessage({
+      text: "Result attached.",
+      attachments: [attachment],
+      idempotency_key: "message:result:1",
+    });
+
+    expect(await api.calls[4]!.request.json()).toEqual({
+      parts: [
+        { type: "text", text: "Result attached." },
+        { type: "file", attachment_id: "attachment_fixture" },
+      ],
+      idempotency_key: "message:result:1",
+    });
+    api.assertComplete();
+  });
+
+  it("surfaces stable Agent API errors", async () => {
+    const api = new AgentApiMock().expect(
+      "GET",
+      "/v1/agent/events",
+      jsonResponse({
+        error: { code: "INVALID_CURSOR", message: "Cursor expired" },
+      }, 400),
+    );
+
+    const error = await createClient(api).events.poll({ cursor: "expired" })
+      .catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(BountyApiError);
+    expect(error).toMatchObject({
+      status: 400,
+      code: "INVALID_CURSOR",
+      message: "Cursor expired",
+    });
+    api.assertComplete();
+  });
+
+  it("retries safe writes with the same idempotency key", async () => {
+    const bodies: unknown[] = [];
+    const api = new AgentApiMock()
+      .expect("GET", "/v1/agent/bounties/bounty_fixture", jsonResponse(
+        bountyDetailsFixture,
+      ))
+      .expect("POST", "/v1/agent/bounties/bounty_fixture/comments", async (request) => {
+        bodies.push(await request.json());
+        return jsonResponse(
+          { error: { code: "RATE_LIMITED", message: "Try again" } },
+          429,
+          { "retry-after": "0" },
+        );
+      })
+      .expect("POST", "/v1/agent/bounties/bounty_fixture/comments", async (request) => {
+        bodies.push(await request.json());
+        return jsonResponse({
+          comment_id: "comment_fixture",
+          watching: true,
+          replayed: false,
+        }, 201);
+      });
+    const work = await createClient(api, { maxRetries: 1 }).bounties.open(
+      "bounty_fixture",
+    );
+    await work.comment({ body: "Can you clarify the format?" });
+
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toEqual(bodies[1]);
+    expect(bodies[0]).toMatchObject({
+      body: "Can you clarify the format?",
+      idempotency_key: expect.any(String),
+    });
+    api.assertComplete();
+  });
+
+  it("verifies the fixed webhook fixture and narrows known events", async () => {
+    const api = new AgentApiMock();
+    const client = createClient(api, { webhookSecret: webhookFixture.secret });
+    const event = await client.webhooks.verify(
+      new Request("https://agent.example.test/webhooks/bounty", {
+        method: "POST",
+        headers: webhookFixture.headers,
+        body: webhookFixture.rawBody,
+      }),
+      { nowSeconds: webhookFixture.nowSeconds },
+    );
+
+    expect(event).toEqual(webhookFixture.event);
+    expect(isAgentEvent(event, "bounty.available")).toBe(true);
+  });
+
+  it("verifies a webhook without constructing an API client", async () => {
+    const event = await verifyWebhook(
+      new Request("https://agent.example.test/webhooks/bounty", {
+        method: "POST",
+        headers: webhookFixture.headers,
+        body: webhookFixture.rawBody,
+      }),
+      {
+        secret: webhookFixture.secret,
+        nowSeconds: webhookFixture.nowSeconds,
+      },
+    );
+
+    expect(event).toEqual(webhookFixture.event);
+  });
+
+  it("rejects a modified webhook body", async () => {
+    const client = createClient(new AgentApiMock(), {
+      webhookSecret: webhookFixture.secret,
+    });
+    const verification = client.webhooks.verify(
+      new Request("https://agent.example.test/webhooks/bounty", {
+        method: "POST",
+        headers: webhookFixture.headers,
+        body: webhookFixture.rawBody.replace("automatic", "manual_release"),
+      }),
+      { nowSeconds: webhookFixture.nowSeconds },
+    );
+
+    await expect(verification).rejects.toMatchObject<BountyWebhookError>({
+      reason: "invalid_signature",
+    });
+  });
+
+  it("keeps a Work handle bound to its original Bounty identity", async () => {
+    const api = new AgentApiMock()
+      .expect("GET", "/v1/agent/bounties/bounty_fixture", jsonResponse(
+        bountyDetailsFixture,
+      ))
+      .expect("POST", "/v1/agent/bounties/bounty_fixture/claims", jsonResponse({
+        outcome: "not_claimed",
+        bounty_id: "bounty_fixture",
+        reason: "already_claimed",
+      }));
+    const work = await createClient(api).bounties.open("bounty_fixture");
+
+    expect(Object.isFrozen(work.bounty)).toBe(true);
+    expect(Object.isFrozen(work.bounty.tags)).toBe(true);
+    await work.claim();
+
+    expect(await api.calls[1]!.request.json()).toEqual({ expected_version: 3 });
+    api.assertComplete();
+  });
+
+  it("does not narrow a future event version to the current data contract", async () => {
+    const rawBody = JSON.stringify({
+      ...webhookFixture.event,
+      version: 2,
+      data: { bounty_id: "bounty_fixture", future_field: true },
+    });
+    const request = await signedWebhookRequest({ rawBody });
+    const event = await createClient(new AgentApiMock(), {
+      webhookSecret: webhookFixture.secret,
+    }).webhooks.verify(request, { nowSeconds: webhookFixture.nowSeconds });
+
+    expect(event.version).toBe(2);
+    expect(isAgentEvent(event, "bounty.available")).toBe(false);
+  });
+
+  it("rejects structurally invalid successful API responses", async () => {
+    const api = new AgentApiMock().expect(
+      "GET",
+      "/v1/agent/bounties",
+      jsonResponse({ bounties: [bountyFixture], is_done: true }),
+    );
+
+    await expect(createClient(api).bounties.list()).rejects.toBeInstanceOf(
+      BountyInvalidResponseError,
+    );
+    api.assertComplete();
+  });
+
+  it("downloads an Agent-owned attachment through its resource", async () => {
+    const api = new AgentApiMock().expect(
+      "GET",
+      "/v1/agent/attachments/attachment_fixture",
+      (request) => {
+        expect(request.headers.get("authorization")).toBe(
+          "Bearer agent_key_test",
+        );
+        return new Response("file contents");
+      },
+    );
+
+    const response = await createClient(api).attachments.download(
+      "attachment_fixture",
+    );
+    expect(await response.text()).toBe("file contents");
+    api.assertComplete();
+  });
+
+  it("does not retry attachment preparation", async () => {
+    const api = new AgentApiMock()
+      .expect("GET", "/v1/agent/bounties/bounty_fixture", jsonResponse(
+        bountyDetailsFixture,
+      ))
+      .expect(
+        "POST",
+        "/v1/agent/bounties/bounty_fixture/attachments",
+        jsonResponse({ error: { code: "INTERNAL_ERROR", message: "Failed" } }, 500),
+      );
+    const work = await createClient(api, { maxRetries: 2 }).bounties.open(
+      "bounty_fixture",
+    );
+
+    await expect(work.upload({
+      filename: "result.txt",
+      content_type: "text/plain",
+      body: new Uint8Array([1]),
+    })).rejects.toMatchObject<BountyUploadError>({ stage: "prepare" });
+    expect(api.calls).toHaveLength(2);
+    api.assertComplete();
+  });
+
+  it("validates attachment completion before returning an upload", async () => {
+    const api = new AgentApiMock()
+      .expect("GET", "/v1/agent/bounties/bounty_fixture", jsonResponse(
+        bountyDetailsFixture,
+      ))
+      .expect("POST", "/v1/agent/bounties/bounty_fixture/attachments", jsonResponse({
+        attachment_id: "attachment_fixture",
+        upload_url: "https://uploads.example.test/object",
+        headers: {
+          "content-type": "text/plain",
+          "content-disposition": 'attachment; filename="result.txt"',
+        },
+        expires_at: 1_787_573_200_000,
+      }, 201))
+      .expect("PUT", "/object", new Response(null, { status: 200 }))
+      .expect(
+        "POST",
+        "/v1/agent/attachments/attachment_fixture/complete",
+        jsonResponse({ attachment_id: "attachment_fixture", status: "broken" }),
+      );
+    const work = await createClient(api).bounties.open("bounty_fixture");
+
+    await expect(work.upload({
+      filename: "result.txt",
+      content_type: "text/plain",
+      body: new Uint8Array([1]),
+    })).rejects.toMatchObject<BountyUploadError>({ stage: "complete" });
+    api.assertComplete();
+  });
+
+  it("retries a per-attempt timeout, then raises a typed timeout", async () => {
+    let attempts = 0;
+    const stalledFetch: typeof globalThis.fetch = (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      attempts += 1;
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("Timed out", "AbortError")),
+          { once: true },
+        );
+      });
+    };
+    const client = new Bounty({
+      apiKey: "agent_key_test",
+      baseURL: "https://api.example.test",
+      fetch: stalledFetch,
+      timeoutMs: 5,
+      maxRetries: 1,
+    });
+
+    await expect(client.events.poll()).rejects.toBeInstanceOf(
+      BountyTimeoutError,
+    );
+    expect(attempts).toBe(2);
+  });
+
+  it("aborts immediately while waiting to retry", async () => {
+    const controller = new AbortController();
+    const reason = new Error("stop retrying");
+    const api = new AgentApiMock().expect(
+      "GET",
+      "/v1/agent/events",
+      () => {
+        controller.abort(reason);
+        return jsonResponse(
+          { error: { code: "RATE_LIMITED", message: "Try later" } },
+          429,
+          { "retry-after": "60" },
+        );
+      },
+    );
+
+    await expect(createClient(api, { maxRetries: 2 }).events.poll({
+      signal: controller.signal,
+    })).rejects.toBe(reason);
+    expect(api.calls).toHaveLength(1);
+    api.assertComplete();
+  });
+
+  it("preserves a final Retry-After date on the API error", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-24T12:00:00.000Z"));
+    const api = new AgentApiMock().expect(
+      "GET",
+      "/v1/agent/events",
+      jsonResponse(
+        { error: { code: "RATE_LIMITED", message: "Try later" } },
+        429,
+        { "retry-after": "Sun, 24 Aug 2026 12:00:05 GMT" },
+      ),
+    );
+
+    const error = await createClient(api).events.poll().catch(
+      (cause: unknown) => cause,
+    );
+    expect(error).toMatchObject<BountyApiError>({ retryAfterMs: 5_000 });
+    api.assertComplete();
+  });
+
+  it("does not automatically retry an excessive Retry-After delay", async () => {
+    const api = new AgentApiMock().expect(
+      "GET",
+      "/v1/agent/events",
+      jsonResponse(
+        { error: { code: "RATE_LIMITED", message: "Try later" } },
+        429,
+        { "retry-after": "300" },
+      ),
+    );
+
+    const error = await createClient(api, { maxRetries: 2 }).events.poll()
+      .catch((cause: unknown) => cause);
+    expect(error).toMatchObject<BountyApiError>({ retryAfterMs: 300_000 });
+    expect(api.calls).toHaveLength(1);
+    api.assertComplete();
+  });
+
+  it("follows event cursors without hiding durable checkpoints", async () => {
+    const controller = new AbortController();
+    const api = new AgentApiMock()
+      .expect("GET", "/v1/agent/events", jsonResponse({
+        events: [webhookFixture.event],
+        next_cursor: "cursor_1",
+        has_more: true,
+      }))
+      .expect("GET", "/v1/agent/events", jsonResponse({
+        events: [],
+        next_cursor: "cursor_2",
+        has_more: false,
+      }));
+    const pages = createClient(api).events.follow({
+      cursor: "cursor_0",
+      signal: controller.signal,
+    })[Symbol.asyncIterator]();
+
+    expect((await pages.next()).value?.next_cursor).toBe("cursor_1");
+    expect((await pages.next()).value?.next_cursor).toBe("cursor_2");
+    controller.abort();
+    await pages.return?.();
+    expect(new URL(api.calls[0]!.request.url).searchParams.get("cursor")).toBe(
+      "cursor_0",
+    );
+    expect(new URL(api.calls[1]!.request.url).searchParams.get("cursor")).toBe(
+      "cursor_1",
+    );
+    api.assertComplete();
+  });
+
+  it("supports webhook secret rotation", async () => {
+    const request = await signedWebhookRequest({
+      rawBody: webhookFixture.rawBody,
+    });
+    const event = await createClient(new AgentApiMock(), {
+      webhookSecret: [
+        "whsec_AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        webhookFixture.secret,
+      ],
+    }).webhooks.verify(request, { nowSeconds: webhookFixture.nowSeconds });
+
+    expect(event.id).toBe(webhookFixture.event.id);
+  });
+
+  it("rejects missing, stale, mismatched, and oversized webhooks", async () => {
+    const client = createClient(new AgentApiMock(), {
+      webhookSecret: webhookFixture.secret,
+    });
+    const missingHeader = new Request("https://agent.example.test/webhook", {
+      method: "POST",
+      body: webhookFixture.rawBody,
+    });
+    await expect(client.webhooks.verify(missingHeader)).rejects.toMatchObject({
+      reason: "missing_header",
+    });
+
+    const stale = await signedWebhookRequest({
+      rawBody: webhookFixture.rawBody,
+      timestamp: "1787572000",
+    });
+    await expect(client.webhooks.verify(stale, {
+      nowSeconds: webhookFixture.nowSeconds,
+    })).rejects.toMatchObject({ reason: "timestamp_out_of_tolerance" });
+
+    const mismatchedBody = JSON.stringify({
+      ...webhookFixture.event,
+      id: "evt_body",
+    });
+    const mismatched = await signedWebhookRequest({
+      rawBody: mismatchedBody,
+      webhookId: "evt_header",
+    });
+    await expect(client.webhooks.verify(mismatched, {
+      nowSeconds: webhookFixture.nowSeconds,
+    })).rejects.toMatchObject({ reason: "event_id_mismatch" });
+
+    const oversized = await signedWebhookRequest({
+      rawBody: webhookFixture.rawBody,
+    });
+    await expect(client.webhooks.verify(oversized, {
+      nowSeconds: webhookFixture.nowSeconds,
+      maxBodyBytes: 10,
+    })).rejects.toMatchObject({ reason: "payload_too_large" });
+  });
+
+  it("rejects invalid webhook bytes and verification options", async () => {
+    const client = createClient(new AgentApiMock(), {
+      webhookSecret: webhookFixture.secret,
+    });
+    const invalidUtf8 = await signedWebhookRequest({
+      rawBody: new Uint8Array([0xff]),
+    });
+    await expect(client.webhooks.verify(invalidUtf8, {
+      nowSeconds: webhookFixture.nowSeconds,
+    })).rejects.toMatchObject({ reason: "invalid_event" });
+
+    const request = await signedWebhookRequest({
+      rawBody: webhookFixture.rawBody,
+    });
+    await expect(client.webhooks.verify(request, {
+      nowSeconds: Number.NaN,
+    })).rejects.toBeInstanceOf(BountyConfigurationError);
+  });
+
+  it("blocks browser use unless it is explicitly acknowledged", () => {
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("document", {});
+
+    expect(() => createClient(new AgentApiMock())).toThrow(
+      BountyConfigurationError,
+    );
+    expect(() => createClient(new AgentApiMock(), {
+      dangerouslyAllowBrowser: true,
+    })).not.toThrow();
+  });
+
+  it("requires HTTPS except for loopback development", () => {
+    expect(() => createClient(new AgentApiMock(), {
+      baseURL: "http://api.example.test",
+    })).toThrow(BountyConfigurationError);
+    expect(() => createClient(new AgentApiMock(), {
+      baseURL: "http://localhost:8787",
+    })).not.toThrow();
+    expect(() => createClient(new AgentApiMock(), {
+      baseURL: "http://api.example.test",
+      dangerouslyAllowInsecureConnection: true,
+    })).not.toThrow();
+  });
+});
