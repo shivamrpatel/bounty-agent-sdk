@@ -295,11 +295,29 @@ export class HttpClient {
       },
     });
     try {
-      return new Response(body, {
+      const wrapped = new Response(body, {
         status: response.status,
         statusText: response.statusText,
         headers: response.headers,
       });
+      Object.defineProperties(wrapped, {
+        redirected: {
+          configurable: true,
+          enumerable: true,
+          value: response.redirected,
+        },
+        type: {
+          configurable: true,
+          enumerable: true,
+          value: response.type,
+        },
+        url: {
+          configurable: true,
+          enumerable: true,
+          value: response.url,
+        },
+      });
+      return wrapped;
     } catch (cause) {
       finish();
       throw cause;

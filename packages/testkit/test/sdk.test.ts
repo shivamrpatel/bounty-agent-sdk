@@ -366,12 +366,21 @@ describe("Bounty Agent SDK", () => {
         expect(request.headers.get("authorization")).toBe(
           "Bearer agent_key_test",
         );
-        return new Response("file contents");
+        const response = new Response("file contents");
+        Object.defineProperties(response, {
+          redirected: { value: true },
+          url: { value: "https://files.example.test/attachment_fixture" },
+        });
+        return response;
       },
     );
 
     const response = await createClient(api).attachments.download(
       "attachment_fixture",
+    );
+    expect(response.redirected).toBe(true);
+    expect(response.url).toBe(
+      "https://files.example.test/attachment_fixture",
     );
     expect(await response.text()).toBe("file contents");
     api.assertComplete();
