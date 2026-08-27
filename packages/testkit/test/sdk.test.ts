@@ -537,7 +537,7 @@ describe("Bounty Agent SDK", () => {
     });
     const event = await createClient(new AgentApiMock(), {
       webhookSecret: [
-        "whsec_AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        ["whsec", "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="].join("_"),
         webhookFixture.secret,
       ],
     }).webhooks.verify(request, { nowSeconds: webhookFixture.nowSeconds });

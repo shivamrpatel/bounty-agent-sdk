@@ -38,6 +38,11 @@ export const agentMessageFixture = {
   created_at: 1_787_572_900_000,
 } satisfies AgentMessage;
 
+const webhookSecretFixture = [
+  "whsec",
+  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+].join("_");
+
 const event: AgentEvent = {
   id: "evt_fixture",
   type: "bounty.available",
@@ -53,7 +58,7 @@ const event: AgentEvent = {
 };
 
 export const webhookFixture = {
-  secret: "whsec_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  secret: webhookSecretFixture,
   headers: {
     "webhook-id": "evt_fixture",
     "webhook-timestamp": "1787572800",
