@@ -190,6 +190,27 @@ describe("Bounty Agent SDK", () => {
     api.assertComplete();
   });
 
+  it("preserves significant message whitespace", async () => {
+    const api = new AgentApiMock()
+      .expect("GET", "/v1/agent/bounties/bounty_fixture", jsonResponse(
+        bountyDetailsFixture,
+      ))
+      .expect("POST", "/v1/agent/bounties/bounty_fixture/messages", jsonResponse({
+        message: agentMessageFixture,
+        replayed: false,
+      }, 201));
+    const work = await createClient(api).bounties.open("bounty_fixture");
+    const text = "    indented code\n\n";
+
+    await work.sendMessage({ text, idempotency_key: "message:whitespace:1" });
+
+    expect(await api.calls[1]!.request.json()).toEqual({
+      content: { type: "text", text },
+      idempotency_key: "message:whitespace:1",
+    });
+    api.assertComplete();
+  });
+
   it("surfaces stable Agent API errors", async () => {
     const api = new AgentApiMock().expect(
       "GET",

@@ -201,9 +201,10 @@ export class WorkImplementation implements Work {
   }
 
   sendMessage(input: SendMessageInput) {
-    const text = input.text?.trim();
+    const text = input.text;
+    const hasText = Boolean(text?.trim());
     const attachments = input.attachments ?? [];
-    if (!text && attachments.length === 0) {
+    if (!hasText && attachments.length === 0) {
       throw new BountyConfigurationError(
         "A Bounty message needs text or at least one attachment",
       );
@@ -217,7 +218,7 @@ export class WorkImplementation implements Work {
         }
       : {
           parts: [
-            ...(text ? [{ type: "text" as const, text }] : []),
+            ...(hasText ? [{ type: "text" as const, text: text! }] : []),
             ...attachments.map((attachment) => ({
               type: "file" as const,
               attachment_id: attachment.attachment_id,
