@@ -3,8 +3,8 @@ dist/
 coverage/
 .turbo/
 .output/
-.eve/cache/
-.eve/agent-summary.json
+**/.eve/cache/
+**/.eve/agent-summary.json
 *.tsbuildinfo
 .env
 .env.*

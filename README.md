@@ -29,3 +29,17 @@ pnpm test
 
 Examples live under `examples/` and exercise the same public package entry
 points that consumers install.
+
+## Live workspace check
+
+After starting a fresh isolated Bounty workspace, run the raw SDK through its
+seeded lifecycle:
+
+```bash
+BOUNTY_AGENT_API_KEY=... \
+BOUNTY_API_BASE_URL=https://your-workspace.convex.site \
+pnpm test:live:workspace
+```
+
+The check claims and submits the seeded open Bounty, so reset the isolated
+workspace before running it again.

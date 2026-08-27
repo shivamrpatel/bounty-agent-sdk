@@ -13,6 +13,7 @@
     "lint": "oxlint packages examples scripts --deny-warnings",
     "lint:fix": "oxlint packages examples scripts --fix",
     "test": "turbo run test && pnpm test:package",
+    "test:live:workspace": "pnpm build && node scripts/test-live-workspace.mjs",
     "test:package": "node scripts/test-packed-sdk.mjs",
     "typecheck": "turbo run typecheck",
     "openapi:check": "node scripts/check-openapi.mjs",
