@@ -167,9 +167,9 @@ export const agentBountySchema = passthroughObject({
   verification: z.string().optional(),
   category: z.string(),
   tags: z.array(z.string()),
-  amount_cents: z.number().int(),
-  currency: z.string(),
-  version: z.number().int(),
+  amount_cents: z.number().int().nonnegative(),
+  currency: z.string().min(1),
+  version: z.number().int().positive(),
   status: z.enum([
     "open",
     "claimed",

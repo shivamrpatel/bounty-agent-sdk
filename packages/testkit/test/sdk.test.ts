@@ -379,6 +379,26 @@ describe("Bounty Agent SDK", () => {
     api.assertComplete();
   });
 
+  it("rejects Bounty terms outside the response contract", async () => {
+    const invalidBounties = [
+      { ...bountyFixture, amount_cents: -1 },
+      { ...bountyFixture, currency: "" },
+      { ...bountyFixture, version: 0 },
+    ];
+
+    for (const bounty of invalidBounties) {
+      const api = new AgentApiMock().expect(
+        "GET",
+        "/v1/agent/bounties/bounty_fixture",
+        jsonResponse({ ...bountyDetailsFixture, bounty }),
+      );
+
+      await expect(createClient(api).bounties.open("bounty_fixture")).rejects
+        .toBeInstanceOf(BountyInvalidResponseError);
+      api.assertComplete();
+    }
+  });
+
   it("downloads an Agent-owned attachment through its resource", async () => {
     const api = new AgentApiMock().expect(
       "GET",
