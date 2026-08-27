@@ -35,7 +35,7 @@
   "scripts": {
     "build": "eve extension build",
     "clean": "rimraf dist",
-    "prepare": "eve extension build",
+    "prepack": "pnpm build",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
