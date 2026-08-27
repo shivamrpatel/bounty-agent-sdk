@@ -1,0 +1,17 @@
+{
+  "name": "@bounty-ai/example-flue-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bounty-ai/agent-sdk": "workspace:^",
+    "@bounty-ai/flue": "workspace:^",
+    "@flue/runtime": "2.0.3",
+    "hono": "4.13.5",
+    "valibot": "1.4.2"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@bounty-ai/agent-testkit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean --target es2022",
+    "clean": "rimraf dist",
+    "test": "vitest run --passWithNoTests && pnpm test:consumers",
+    "test:consumers": "tsc -p tsconfig.consumers.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@bounty-ai/agent-sdk": "workspace:^",
+    "rimraf": "6.1.3",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}
