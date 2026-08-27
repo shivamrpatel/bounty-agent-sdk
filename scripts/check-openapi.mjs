@@ -1,17 +1,13 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-
-const openapiURL = process.env.BOUNTY_OPENAPI_URL ??
-  "https://api.trybounty.ai/openapi.json";
-const snapshotURL = new URL(
-  "../packages/agent-sdk/openapi/agent-v1.json",
-  import.meta.url,
-);
-const generatedURL = new URL(
-  "../packages/agent-sdk/src/internal/generated/agent-v1.ts",
-  import.meta.url,
-);
-const checksumsURL = new URL("./openapi-checksums.json", import.meta.url);
+import {
+  checksumsURL,
+  fetchOpenAPIContract,
+  generatedURL,
+  renderOpenAPITypes,
+  serializeOpenAPIContract,
+  sha256,
+  snapshotURL,
+} from "./openapi.mjs";
 
 const [snapshotText, generatedText, checksumsText] = await Promise.all([
   readFile(snapshotURL, "utf8"),
@@ -19,10 +15,8 @@ const [snapshotText, generatedText, checksumsText] = await Promise.all([
   readFile(checksumsURL, "utf8"),
 ]);
 const checksums = JSON.parse(checksumsText);
-const snapshotHash = createHash("sha256").update(snapshotText).digest("hex");
-const generatedTypesHash = createHash("sha256")
-  .update(generatedText)
-  .digest("hex");
+const snapshotHash = sha256(snapshotText);
+const generatedTypesHash = sha256(generatedText);
 const generatedHash = generatedText.match(
   /OpenAPI snapshot SHA-256: ([a-f0-9]{64})/,
 )?.[1];
@@ -37,20 +31,17 @@ if (
   );
 }
 
-const response = await fetch(openapiURL, {
-  headers: { accept: "application/json" },
-});
-if (!response.ok) {
+const expectedGeneratedText = await renderOpenAPITypes(snapshotText);
+if (generatedText !== expectedGeneratedText) {
   throw new Error(
-    `Could not fetch the live Agent OpenAPI contract (${response.status})`,
+    "The generated Agent declarations do not match the pinned OpenAPI snapshot. Run pnpm openapi:update and review the result.",
   );
 }
 
-const liveContract = await response.json();
-const pinnedContract = JSON.parse(snapshotText);
-if (JSON.stringify(liveContract) !== JSON.stringify(pinnedContract)) {
+const liveContract = await fetchOpenAPIContract();
+if (serializeOpenAPIContract(liveContract) !== snapshotText) {
   throw new Error(
-    "The live Agent OpenAPI contract differs from the pinned SDK snapshot. Review the API change before regenerating and publishing.",
+    "The live Agent OpenAPI contract differs from the pinned SDK snapshot. Run pnpm openapi:update and review the API change before publishing.",
   );
 }
 

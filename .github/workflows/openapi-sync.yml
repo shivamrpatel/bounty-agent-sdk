@@ -1,0 +1,65 @@
+name: Sync OpenAPI
+
+on:
+  schedule:
+    - cron: "17 14 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: openapi-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm openapi:update
+      - run: pnpm openapi:check
+      - name: Detect contract changes
+        id: changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Open or update the sync pull request
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          branch="automation/openapi-sync"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --force-create "$branch"
+          git add packages/agent-sdk/openapi/agent-v1.json \
+            packages/agent-sdk/src/internal/generated/agent-v1.ts \
+            scripts/openapi-checksums.json
+          git commit -m "chore: sync Agent OpenAPI contract"
+          git push --force-with-lease origin "HEAD:$branch"
+          if gh pr view "$branch" --json url >/dev/null 2>&1; then
+            gh pr edit "$branch" \
+              --title "Sync Agent OpenAPI contract" \
+              --body "Generated from the live Bounty Agent API. Review the contract and generated TypeScript declarations together."
+          else
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "Sync Agent OpenAPI contract" \
+              --body "Generated from the live Bounty Agent API. Review the contract and generated TypeScript declarations together."
+          fi
