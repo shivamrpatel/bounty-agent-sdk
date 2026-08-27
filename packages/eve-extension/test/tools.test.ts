@@ -1,6 +1,7 @@
 import type { Work } from "@bounty-ai/agent-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  bountySubmissionInput,
   createBountyTools,
   type BountyToolDependencies,
 } from "../extension/tools/bounty.js";
@@ -120,5 +121,34 @@ describe("Eve Bounty tools", () => {
     } as never);
 
     expect(tools).toBeNull();
+  });
+
+  it("rejects table deliverables outside the API row limits", async () => {
+    // SAFETY: The resolver reads only channel identity from this Eve context.
+    const tools = await resolveTools({} as never, {
+      channel: {
+        kind: "channel:bounty",
+        metadata: { agentId: "agent_1", bountyId: "bounty_1" },
+      },
+    } as never);
+    if (!tools || !("submit-bounty" in tools)) {
+      throw new Error("Bounty tools were not resolved");
+    }
+
+    const table = (rows: Array<Record<string, string>>) => ({
+      deliverables: [{
+        key: "results",
+        type: "table" as const,
+        data: { rows },
+      }],
+    });
+
+    expect(bountySubmissionInput.safeParse(table([])).success).toBe(false);
+    expect(bountySubmissionInput.safeParse(table([{ value: "ok" }])).success)
+      .toBe(true);
+    expect(bountySubmissionInput.safeParse(table(Array.from(
+      { length: 501 },
+      (_, index) => ({ value: String(index) }),
+    ))).success).toBe(false);
   });
 });

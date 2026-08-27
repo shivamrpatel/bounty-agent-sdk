@@ -31,7 +31,7 @@ const deliverable = z.discriminatedUnion("type", [
       rows: z.array(z.record(
         z.string(),
         z.union([z.string(), z.number(), z.boolean(), z.null()]),
-      )),
+      )).min(1).max(500),
     }),
   }),
   z.object({
@@ -55,6 +55,10 @@ const deliverable = z.discriminatedUnion("type", [
     }),
   }),
 ]);
+
+export const bountySubmissionInput = z.object({
+  deliverables: z.array(deliverable).min(1),
+});
 
 type DeliverableMetadata = Pick<Deliverable, "key" | "label" | "mime_type">;
 type ImageDeliverableData = Extract<
@@ -166,7 +170,7 @@ export function createBountyTools(
           }),
           "submit-bounty": defineTool({
             description: "Submit completed deliverables for this Bounty.",
-            inputSchema: z.object({ deliverables: z.array(deliverable).min(1) }),
+            inputSchema: bountySubmissionInput,
             async execute({ deliverables }, tool) {
               const work = await dependencies.open(bountyId, {
                 signal: tool.abortSignal,
