@@ -34,7 +34,7 @@ environment with required reviewer approval before the first release.
 `@bounty-ai/agent-sdk` already exists on npm and can use trusted publishing now.
 Configure its npm trusted publisher with:
 
-- GitHub owner: `shivamrpatel`
+- GitHub owner: `trybounty-ai`
 - Repository: `bounty-agent-sdk`
 - Workflow: `publish.yml`
 - Environment: `npm`

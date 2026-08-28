@@ -6,11 +6,11 @@
   "author": "Bounty",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shivamrpatel/bounty-agent-sdk.git",
+    "url": "git+https://github.com/trybounty-ai/bounty-agent-sdk.git",
     "directory": "packages/agent-sdk"
   },
   "bugs": {
-    "url": "https://github.com/shivamrpatel/bounty-agent-sdk/issues"
+    "url": "https://github.com/trybounty-ai/bounty-agent-sdk/issues"
   },
   "type": "module",
   "license": "MIT",
