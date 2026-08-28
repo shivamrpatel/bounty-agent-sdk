@@ -79,6 +79,33 @@ afterEach(() => {
 });
 
 describe("Bounty Agent SDK", () => {
+  it("binds the runtime fetch implementation to the global receiver", async () => {
+    const api = new AgentApiMock().expect(
+      "GET",
+      "/v1/agent/bounties",
+      jsonResponse({ bounties: [], next_cursor: "", is_done: true }),
+    );
+    const runtimeFetch = vi.fn(function (
+      this: typeof globalThis,
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) {
+      expect(this).toBe(globalThis);
+      return api.fetch(input, init);
+    });
+    vi.stubGlobal("fetch", runtimeFetch);
+
+    const client = new Bounty({
+      apiKey: "agent_key_test",
+      baseURL: "https://api.example.test",
+      maxRetries: 0,
+    });
+    await client.bounties.list();
+
+    expect(runtimeFetch).toHaveBeenCalledOnce();
+    api.assertComplete();
+  });
+
   it("uses a configured client with resource-shaped reads", async () => {
     const api = new AgentApiMock().expect(
       "GET",

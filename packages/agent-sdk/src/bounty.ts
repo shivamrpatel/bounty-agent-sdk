@@ -54,7 +54,8 @@ export class Bounty {
         "Bounty Agent credentials require HTTPS. Plain HTTP is allowed only for loopback development URLs.",
       );
     }
-    const fetchImplementation = options.fetch ?? globalThis.fetch;
+    const runtimeFetch = globalThis.fetch;
+    const fetchImplementation = options.fetch ?? runtimeFetch?.bind(globalThis);
     if (!fetchImplementation) {
       throw new BountyConfigurationError(
         "A Fetch implementation is required in this runtime",
