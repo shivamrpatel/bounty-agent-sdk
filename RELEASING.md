@@ -41,9 +41,10 @@ Configure its npm trusted publisher with:
 - Allowed action: `npm publish`
 
 An npm package must exist before trusted publishing can be configured.
-`@bounty-ai/flue` therefore needs a one-time bootstrap release using an npm
-automation token stored as the `NPM_TOKEN` environment secret. After that first
-release, configure the same trusted publisher for Flue and remove the token.
+`@bounty-ai/flue` therefore needs a one-time local bootstrap release from an
+audited tarball using interactive npm authentication and 2FA. Do not store an
+npm token in GitHub. After that first release, configure the same trusted
+publisher for Flue and log out of the temporary npm session.
 
 The workflow publishes through the npm CLI, which supports OIDC and automatic
 provenance. pnpm is still used to create each tarball so workspace dependency

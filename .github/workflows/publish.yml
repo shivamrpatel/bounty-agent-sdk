@@ -33,7 +33,7 @@ jobs:
       - run: pnpm release:beta:dry-run
 
   publish:
-    if: ${{ !inputs.dry_run }}
+    if: ${{ !inputs.dry_run && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: npm
@@ -54,7 +54,6 @@ jobs:
       - name: Publish beta packages
         run: pnpm release:beta
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
       - name: Push package tags
         run: git push --follow-tags
