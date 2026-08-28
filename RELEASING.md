@@ -21,6 +21,11 @@ from `main`. It defaults to a dry run. Turn off **dry_run** only when the packag
 contents and versions are ready. Releases use the npm `beta` tag, so they do not
 replace `latest`.
 
+The packages remain pre-1.0 while their public interfaces settle. Changesets is
+in `beta` prerelease mode, so version pull requests continue the prerelease
+sequence instead of promoting a package to a stable release. Leave prerelease
+mode only when the packages are ready for stable versions.
+
 The publish job is attached to the `npm` GitHub environment. Configure that
 environment with required reviewer approval before the first release.
 
