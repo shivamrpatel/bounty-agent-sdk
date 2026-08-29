@@ -20,10 +20,8 @@
     "openapi:update": "node scripts/update-openapi.mjs",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "pnpm release:beta",
     "release:check": "pnpm openapi:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test",
-    "release:beta": "pnpm release:check && node scripts/publish-packages.mjs --tag beta",
-    "release:beta:dry-run": "pnpm release:check && node scripts/publish-packages.mjs --tag beta --dry-run"
+    "release:pack": "node scripts/prepare-release.mjs --tag beta --out release-artifacts"
   },
   "devDependencies": {
     "@changesets/cli": "3.0.1",

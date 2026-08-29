@@ -29,6 +29,12 @@ mode only when the packages are ready for stable versions.
 The publish job is attached to the `npm` GitHub environment. Configure that
 environment with required reviewer approval before the first release.
 
+Release checks and package scripts run in an unprivileged preparation job. The
+workflow transfers checksummed tarballs to a minimal OIDC publishing job, which
+publishes with lifecycle scripts disabled. Repository write access exists only
+in the final tag job and is not available while dependencies or package scripts
+run.
+
 ## npm authentication
 
 `@bounty-ai/agent-sdk` already exists on npm and can use trusted publishing now.
