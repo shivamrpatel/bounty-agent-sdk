@@ -40,7 +40,7 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           for tarball in release-artifacts/*.tgz; do
-            npm publish "$tarball" --access public --tag beta --ignore-scripts --dry-run
+            npm publish "./$tarball" --access public --tag beta --ignore-scripts --dry-run
           done
       - name: Upload release artifacts
         if: ${{ !inputs.dry_run }}
@@ -86,7 +86,7 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           for tarball in release-artifacts/*.tgz; do
-            npm publish "$tarball" --access public --tag beta --ignore-scripts --provenance
+            npm publish "./$tarball" --access public --tag beta --ignore-scripts --provenance
           done
 
   tag:
