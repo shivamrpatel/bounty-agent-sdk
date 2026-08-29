@@ -109,6 +109,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           jq -r '.packages[] | "\(.name)@\(.version)"' release-artifacts/release-manifest.json |
             while IFS= read -r tag; do
               if git rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null; then
